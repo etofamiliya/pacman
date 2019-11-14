@@ -40,7 +40,7 @@
     "eyes-left": { "row": 6, "cols": [4], "delay": 100},
     "eyes-right": { "row": 6, "cols": [0], "delay": 100},
     "ghost-frightened": { "row": 7, "cols": [0, 1], "delay": 100},
-    "ghost-blinking": { "row": 7, "cols": [0, 2, 1, 3], "delay": 100}   
+    "ghost-blinking": { "row": 7, "cols": [0, 2, 1, 3], "delay": 300}   
   },
   "textures": {
     "inky": [4, 0],

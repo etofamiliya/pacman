@@ -170,6 +170,21 @@ class Grid(object):
 
 
 
+class Timer(object):
+  def __init__(self, duration, action):
+    self.start = pygame.time.get_ticks()
+    self.duration = duration
+    self.finished = False
+    self.action = action
+    
+  def update(self):
+    if not self.finished:
+      time = pygame.time.get_ticks()
+      if time - self.start >= self.duration:
+        self.finished = True
+        self.action()
+
+
 
 class Animation(object):
   def __init__(self, frames, delay, repeat = True):
@@ -214,8 +229,20 @@ class Sprite(pygame.sprite.DirtySprite):
   
   def set_pos(self, newpos):
     self.rect.topleft = newpos
+
+
+
+class TimedSprite(Sprite):
+  def __init__(self, pos, app, name, duration):
+    image = app.textures[name]
+    super().__init__(pos, image)
+    self.timer = Timer(duration, self.kill)
+    self.dirty = 2
     
-    
+  def update(self):
+    self.timer.update()
+
+
 
 class Dot(Sprite):
   def __init__(self, pos, app):
@@ -241,36 +268,47 @@ class Energizer(Sprite):
   def __init__(self, pos, app):
     image = app.textures['energizer']
     super().__init__(pos, image)
-    
-  
+   
+
 class Ghost(Sprite):
   def __init__(self, pos, app, name):
     image = app.textures[name]
     super().__init__(pos, image)
-    self.mode = 'waiting' # waiting, chasing, frightened, scattering
+    self.mode = 'waiting' # chasing, frightened, scattering
+    self.action = 'idle'  # walking, going-home, blinking
     self.direction = 'right'
     self.animation = None
     self.name = name
-    self.mode_timer = 0
-    self.speed = 3
+    self.speed = 0
     self.dirty = 2
     self.app = app
     self.path = []
     
+    self.blink_timer = None
+    self.switch_timer = None
+    self.change_mode('scattering')
+    
   def is_at_home(self):
-    return self.get_pos() == self.initial_pos
+    return self.get_pos() == self.get_home_pos()
+    
+  def get_home_pos(self):
+    return self.initial_pos      
     
   def is_walkable(self, cell):
-    return cell.cell not in 'w'
+    return cell.cell != 'w'
+    
+  def is_vulnerable(self):
+    return self.mode == 'frightened' and self.action != 'going-home'
     
   def change_animation(self):
-    default_name = self.name + '-' + self.direction
-    animations = {
-      'frightened': 'ghost-frightened',
-      'going-home': 'eyes-' + self.direction,
-      'other_modes_default': default_name
-    }
-    animation_name = animations.get(self.mode, default_name)
+    animation_name = self.name + '-' + self.direction
+    if self.mode == 'frightened':
+      actions = {
+        'blinking': 'ghost-blinking',
+        'walking': 'ghost-frightened',
+        'going-home': 'eyes-' + self.direction,
+      }
+      animation_name = actions[self.action]
     self.animation = self.app.animations.get(animation_name)
   
   def redraw(self):
@@ -286,28 +324,70 @@ class Ghost(Sprite):
   def pathfind(self, goal_pos):
     return self.app.grid.pathfind(self.get_pos(), goal_pos)
     
+  def make_one_step(self, neighbors):
+    opposite = {
+      'up': 'down',
+      'down': 'up',
+      'left': 'right',
+      'right': 'left'
+    }
+    
+    directions = list(neighbors.keys())
+    shuffle(directions)
+    
+    for new_direction in directions:
+      if opposite[self.direction] == new_direction:
+        continue
+      
+      neighbor = neighbors.get(new_direction)
+      if neighbor and self.is_walkable(neighbor):
+        self.path = [neighbor]
+        break
+        
+  def get_speed(self):
+    modes = {
+      'chasing': {
+        'walking': 3
+      },
+      'scattering': {
+        'walking': 3
+      },
+      'frightened': {
+        'walking': 2,
+        'blinking': 2,
+        'going-home': 5
+      }
+    }
+    mode_limits = modes.get(self.mode, {})
+    return mode_limits.get(self.action, 3)
+      
+      
+  def blink(self):
+    self.action = 'blinking'
+    
+  def switch_mode(self):
+    if self.mode == 'scattering':
+      self.change_mode('chasing')
+    else:
+      self.change_mode('scattering')
+    
   def change_mode(self, mode):
-    if self.mode == 'going-home' and mode == 'frightened':
+    if self.action == 'going-home' and mode == 'frightened':
       return
-    time = pygame.time.get_ticks()
-    self.mode_timer = time + 10000
+    
+    if mode == 'frightened':
+      self.blink_timer = Timer(7000, self.blink)    
+    self.switch_timer = Timer(10000, self.switch_mode)
+    
     self.mode = mode
+    self.action = 'walking'
     self.change_animation()
+    self.speed = self.get_speed()
     self.path = []
 
   def update(self):  
-    time = pygame.time.get_ticks()
-    if self.mode not in ['going-home']:
-      
-      if time >= self.mode_timer:
-        if self.mode == 'scattering':
-          self.change_mode('chasing')
-        else:
-          self.change_mode('scattering')
-          
-    if self.mode == 'frightened':
-      if self.mode_timer - time <= 2000:
-        self.change_animation()
+    timers = [self.blink_timer, self.switch_timer]
+    [timer.update() for  timer in timers if timer]
         
 
     x, y = self.get_pos()
@@ -330,6 +410,9 @@ class Ghost(Sprite):
       target_vec = pygame.math.Vector2(target_x, target_y)
       
       direction_vec = target_vec - position
+      if direction_vec.length() > 2 * tilesize:
+        self.path = []
+        
       if direction_vec.length() < self.speed:
         self.path.pop(0)
       
@@ -338,48 +421,24 @@ class Ghost(Sprite):
           self.change_direction(new_direction)
           
     else:
-      if self.mode in ['frightened', 'scattering']:
-        opposite = {
-          'up': 'down',
-          'down': 'up',
-          'left': 'right',
-          'right': 'left'
-        }
-        
-        directions = list(neighbors.keys())
-        shuffle(directions)
-        
-        for new_direction in directions:
-          if opposite[self.direction] == new_direction:
-            continue
-          
-          neighbor = neighbors.get(new_direction)
-          if neighbor and self.is_walkable(neighbor):
-            self.path = [neighbor]
-            break
+      if self.mode == 'frightened':
+        if self.action == 'going-home':
+          if self.is_at_home():
+            self.change_mode('scattering')
+          else:
+            self.path = self.pathfind(self.get_home_pos())
+        else:
+          self.make_one_step(neighbors)
 
-      
-      # elif self.mode == 'scattering':
-        # pass
+      elif self.mode == 'scattering':
+        self.make_one_step(neighbors)
         
       elif self.mode == 'chasing':
         self.path = self.pathfind(self.app.pacman.get_pos())
-        
-      elif self.mode == 'going-home':
-        if self.is_at_home():
-          self.change_mode('chasing')
-        else:
-          self.path = self.pathfind(self.initial_pos)
-        
+
       
     if direction_vec:
-      speed_limits = {
-        'frightened': 2,
-        'going-home': 5,
-        'other_modes_default': 3
-      }
-  
-      self.speed = speed_limits.get(self.mode, 3)
+      self.speed = self.get_speed()
       distance = direction_vec.length()
       if distance < self.speed:
         self.speed = distance
@@ -394,10 +453,10 @@ class Blinky(Ghost):
   def __init__(self, pos, app):
     super().__init__(pos, app, 'blinky') 
     
-  # def is_at_home(self):
-    # for ghost in self.app.ghosts:
-      # if ghost.name == 'pinky':
-        # return self.get_pos() == ghost.initial_pos
+  def get_home_pos(self):
+    for ghost in self.app.ghosts:
+      if ghost.name == 'pinky':
+        return ghost.initial_pos
     
 class Clyde(Ghost):
   def __init__(self, pos, app):
@@ -411,19 +470,6 @@ class Inky(Ghost):
   def __init__(self, pos, app):
     super().__init__(pos, app, 'inky')
 
-
-class TimedSprite(Sprite):
-  def __init__(self, pos, app, name, timer):
-    image = app.textures[name]
-    super().__init__(pos, image)
-    self.timer = pygame.time.get_ticks() + timer
-    self.dirty = 2
-    
-  def update(self):
-    time = pygame.time.get_ticks()
-    if time > self.timer:
-      self.kill()
-    
     
     
 class Pacman(Sprite):
@@ -440,6 +486,8 @@ class Pacman(Sprite):
     self.app = app
     
     self.ghost_bonus = 200
+    
+    self.start_timer = None
        
   def change_direction(self, keyname):
     converter = {
@@ -462,16 +510,30 @@ class Pacman(Sprite):
     if self.animation:
       self.animation.update()
       self.image = self.animation.get_frame()
+      
+  def game_start(self):
+    for ghost in self.app.ghosts:
+      ghost.change_mode('scattering')
+    
+    self.start_timer = None
+    self.dying = False
+
     
   def update(self):
-    if self.dying:
+    if self.start_timer:
+      self.start_timer.update()
+      return
+    elif self.dying:
       if self.animation.finished():
+        for ghost in self.app.ghosts:
+          ghost.set_pos(ghost.initial_pos)
         self.set_pos(self.initial_pos)
         self.image = self.app.textures['pacman']
         self.animation.rewind()
         self.animation = None
-        self.dying = False
         self.speed = 0
+          
+        self.start_timer = Timer(1000, self.game_start)
       self.redraw()
       return
     
@@ -502,18 +564,22 @@ class Pacman(Sprite):
       if sprite in self.app.ghosts:
         ghost_pos = sprite.get_pos()
         if pacman.distance_to(ghost_pos) <= (tilesize / 2):
-          if sprite.mode == 'frightened':
+          if sprite.is_vulnerable():
             ts_name = str(self.ghost_bonus)
             ts_score = TimedSprite(ghost_pos, self.app, ts_name, 800)
             self.app.sprites.add(ts_score)
             
-            sprite.change_mode('going-home')
+            sprite.action = 'going-home'
             self.score += self.ghost_bonus
             self.ghost_bonus *= 2
           elif sprite.mode in ['chasing', 'scattering']:
             self.animation = self.app.animations['pacman-dying-' + self.direction]
             self.dying = True
-            self.speed = 0
+            
+            for ghost in self.app.ghosts:
+              ghost.change_mode('waiting')
+              ghost.speed = 0
+            
             break
           else:
             pass
