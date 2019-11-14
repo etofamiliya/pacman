@@ -1,17 +1,16 @@
 # etofamiliya, 2017-
 
+
+import json
+import os, os.path
 import contextlib
 with contextlib.redirect_stdout(None):
   import pygame
   import pygame.math
   import pygame.gfxdraw
-  
-# import pytmx
-import json
-import os, os.path
 
-# from pytmx.util_pygame import load_pygame
 from pygame.locals import *
+from random import shuffle
 
 tilesize = 32
 
@@ -52,34 +51,6 @@ plan = [
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 class GridCell(object):
   def __init__(self, row, col, cell, cost):
     self.parent = None
@@ -102,7 +73,7 @@ class GridCell(object):
 
 
 class Grid(object):
-  def __init__(self, grid, cellsize):
+  def __init__(self, grid, tilesize):
     rows = range(len(grid))
     cols = range(len(grid[0]))
     self.grid = [[0 for _ in cols] for _ in rows]
@@ -116,38 +87,48 @@ class Grid(object):
       for col, typ in enumerate(line):
         self.grid[row][col] = GridCell(row, col, typ, costs.get(typ, 1))
     
-    self.cellsize = cellsize
+    self.tilesize = tilesize
     
     
   def get_by_pos(self, pos):
-    col, row = [int(v / self.cellsize) for v in pos]
+    col, row = [int(v / self.tilesize) for v in pos]
     return self.get(row, col)
     
   def get(self, row, col):
-    """ TODO BOUNDS CHECK """
+    rows = len(self.grid) - 1
+    cols = len(self.grid[0]) - 1
+
+    if row < 0 or row > rows or col < 0 or col > cols:
+      return GridCell(row, col, 'tunnel', 0)
     return self.grid[row][col]
     
   def get_neighbors(self, cell):
+    if cell.cell == 'tunnel':
+      if cell.col == -1:
+        return {
+          'left': self.get(cell.row, 18),
+          'right': self.get(cell.row, 0)
+        }
+      elif cell.col == 19:
+        return {
+          'left': self.get(cell.row, 18),
+          'right': self.get(cell.row, 0)
+        }
+      return {}
+  
     row, col = cell.row, cell.col
     neighbors = {
       'up': self.get(row - 1, col),
       'down': self.get(row + 1, col),
       'left': self.get(row, col - 1),
       'right': self.get(row, col + 1)
-    }
+    }    
     return neighbors
-    
-  def can_move_to(self, pos, direction, impassable_types):
-    cell = self.get_by_pos(pos)
-    neighbors = self.get_neighbors(cell)
-    neighbor = neighbors[direction]
-    return neighbor.cell not in impassable_types
-        
 
   def pathfind(self, start_pos, goal_pos): 
     for line in self.grid:
       [cell.reset() for cell in line]
-  
+      
     start = self.get_by_pos(start_pos)
     goal = self.get_by_pos(goal_pos)
     
@@ -186,44 +167,6 @@ class Grid(object):
           neighbor.parent = cell
           
     return []
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -304,38 +247,81 @@ class Ghost(Sprite):
   def __init__(self, pos, app, name):
     image = app.textures[name]
     super().__init__(pos, image)
-    self.mode = 'scattering' # chasing, frightened, scattering
-    self.name = name
-    self.dirty = 2
-    self.speed = 0
-    self.app = app
-    
-    
-class Blinky(Ghost):
-  def __init__(self, pos, app):
-    super().__init__(pos, app, 'blinky')
-    
-    self.animation = self.app.animations['blinky-right']
+    self.mode = 'waiting' # waiting, chasing, frightened, scattering
     self.direction = 'right'
+    self.animation = None
+    self.name = name
+    self.mode_timer = 0
     self.speed = 3
+    self.dirty = 2
+    self.app = app
     self.path = []
+    
+  def is_at_home(self):
+    return self.get_pos() == self.initial_pos
+    
+  def is_walkable(self, cell):
+    return cell.cell not in 'w'
+    
+  def change_animation(self):
+    default_name = self.name + '-' + self.direction
+    animations = {
+      'frightened': 'ghost-frightened',
+      'going-home': 'eyes-' + self.direction,
+      'other_modes_default': default_name
+    }
+    animation_name = animations.get(self.mode, default_name)
+    self.animation = self.app.animations.get(animation_name)
   
   def redraw(self):
-    if self.animation:
-      self.animation.update()
-      self.image = self.animation.get_frame()
-      
-      
+    if not self.animation:
+      self.change_animation()
+    self.image = self.animation.get_frame()
+    self.animation.update()
+    
   def change_direction(self, direction):
-    self.animation = self.app.animations[self.name + '-' + direction]
     self.direction = direction
+    self.change_animation()
       
   def pathfind(self, goal_pos):
     return self.app.grid.pathfind(self.get_pos(), goal_pos)
     
-  def update(self):
-    blinky_cell = self.app.grid.get_by_pos(self.get_pos())
-    blinky_vec = pygame.math.Vector2(self.get_pos())
+  def change_mode(self, mode):
+    if self.mode == 'going-home' and mode == 'frightened':
+      return
+    time = pygame.time.get_ticks()
+    self.mode_timer = time + 10000
+    self.mode = mode
+    self.change_animation()
+    self.path = []
+
+  def update(self):  
+    time = pygame.time.get_ticks()
+    if self.mode not in ['going-home']:
+      
+      if time >= self.mode_timer:
+        if self.mode == 'scattering':
+          self.change_mode('chasing')
+        else:
+          self.change_mode('scattering')
+          
+    if self.mode == 'frightened':
+      if self.mode_timer - time <= 2000:
+        self.change_animation()
+        
+
+    x, y = self.get_pos()
+    maxx, maxy = self.app.screen.get_size()
+    
+    #walking through tunnel
+    if x >= maxx and self.direction == 'right':
+      x = -tilesize
+    elif x <= (-tilesize) and self.direction == 'left':
+      x = maxx
+      
+    ghost_cell = self.app.grid.get_by_pos((x, y))
+    neighbors = self.app.grid.get_neighbors(ghost_cell)
+    position = pygame.math.Vector2(x, y)
     direction_vec = None
     if self.path:
       target_cell = self.path[0]
@@ -343,32 +329,75 @@ class Blinky(Ghost):
       target_y = target_cell.row * self.app.tilesize
       target_vec = pygame.math.Vector2(target_x, target_y)
       
-      direction_vec = target_vec - blinky_vec
+      direction_vec = target_vec - position
       if direction_vec.length() < self.speed:
         self.path.pop(0)
       
-      neighbors = self.app.grid.get_neighbors(blinky_cell)
       for new_direction in neighbors:
         if neighbors[new_direction] == target_cell:
           self.change_direction(new_direction)
           
     else:
-      self.path = self.pathfind(self.app.pacman.get_pos())
+      if self.mode in ['frightened', 'scattering']:
+        opposite = {
+          'up': 'down',
+          'down': 'up',
+          'left': 'right',
+          'right': 'left'
+        }
+        
+        directions = list(neighbors.keys())
+        shuffle(directions)
+        
+        for new_direction in directions:
+          if opposite[self.direction] == new_direction:
+            continue
+          
+          neighbor = neighbors.get(new_direction)
+          if neighbor and self.is_walkable(neighbor):
+            self.path = [neighbor]
+            break
+
       
+      # elif self.mode == 'scattering':
+        # pass
+        
+      elif self.mode == 'chasing':
+        self.path = self.pathfind(self.app.pacman.get_pos())
+        
+      elif self.mode == 'going-home':
+        if self.is_at_home():
+          self.change_mode('chasing')
+        else:
+          self.path = self.pathfind(self.initial_pos)
+        
       
     if direction_vec:
-        self.speed = 3
-        distance = direction_vec.length()
-        if distance < self.speed:
-          self.speed = distance
-        direction_vec.normalize_ip()
-        direction_vec *= self.speed
-        newpos = blinky_vec + direction_vec
-        self.set_pos(newpos)
+      speed_limits = {
+        'frightened': 2,
+        'going-home': 5,
+        'other_modes_default': 3
+      }
+  
+      self.speed = speed_limits.get(self.mode, 3)
+      distance = direction_vec.length()
+      if distance < self.speed:
+        self.speed = distance
+      shift = direction_vec.normalize() * self.speed
+      newpos = (position + shift).xy
+      self.set_pos(newpos)
     self.redraw()
-      
-      
     
+    
+    
+class Blinky(Ghost):
+  def __init__(self, pos, app):
+    super().__init__(pos, app, 'blinky') 
+    
+  # def is_at_home(self):
+    # for ghost in self.app.ghosts:
+      # if ghost.name == 'pinky':
+        # return self.get_pos() == ghost.initial_pos
     
 class Clyde(Ghost):
   def __init__(self, pos, app):
@@ -382,6 +411,20 @@ class Inky(Ghost):
   def __init__(self, pos, app):
     super().__init__(pos, app, 'inky')
 
+
+class TimedSprite(Sprite):
+  def __init__(self, pos, app, name, timer):
+    image = app.textures[name]
+    super().__init__(pos, image)
+    self.timer = pygame.time.get_ticks() + timer
+    self.dirty = 2
+    
+  def update(self):
+    time = pygame.time.get_ticks()
+    if time > self.timer:
+      self.kill()
+    
+    
     
 class Pacman(Sprite):
   def __init__(self, pos, app):
@@ -393,7 +436,10 @@ class Pacman(Sprite):
     self.dying = False
     self.speed = 0
     self.dirty = 2
+    self.score = 0
     self.app = app
+    
+    self.ghost_bonus = 200
        
   def change_direction(self, keyname):
     converter = {
@@ -403,10 +449,14 @@ class Pacman(Sprite):
       K_RIGHT: 'right'
     }
     self.new_direction = converter[keyname]
-    
-    
-  def can_move_to(self, direction):
-    return self.app.grid.can_move_to(self.get_pos(), direction, 'wo')
+ 
+  def is_walkable(self, cell):
+    return cell.cell not in 'wo'
+  
+  def can_move_to(self, pos, direction):
+    cell = self.app.grid.get_by_pos(pos)
+    neighbors = self.app.grid.get_neighbors(cell)      
+    return self.is_walkable(neighbors[direction])
   
   def redraw(self):
     if self.animation:
@@ -426,11 +476,12 @@ class Pacman(Sprite):
       return
     
     x, y = self.get_pos()
-    
+    tilesize = self.app.tilesize
+
     if self.new_direction:      
       multiple_of = lambda v: (v % tilesize) <= self.speed
       can_turn_to = multiple_of(x) and multiple_of(y) 
-      can_move_to = self.can_move_to(self.new_direction)
+      can_move_to = self.can_move_to((x, y), self.new_direction)
 
       if can_turn_to and can_move_to:
         self.direction = self.new_direction
@@ -445,32 +496,67 @@ class Pacman(Sprite):
       'right': (x + self.speed, y)
     }
     
+    total_pills = 0
     pacman = pygame.math.Vector2(self.get_pos())
     for sprite in self.app.sprites.sprites():
       if sprite in self.app.ghosts:
-        if pacman.distance_to(sprite.get_pos()) <= (tilesize / 2):
-          self.animation = self.app.animations['pacman-dying-' + self.direction]
-          self.dying = True
-          self.speed = 0
-          break
+        ghost_pos = sprite.get_pos()
+        if pacman.distance_to(ghost_pos) <= (tilesize / 2):
+          if sprite.mode == 'frightened':
+            ts_name = str(self.ghost_bonus)
+            ts_score = TimedSprite(ghost_pos, self.app, ts_name, 800)
+            self.app.sprites.add(ts_score)
+            
+            sprite.change_mode('going-home')
+            self.score += self.ghost_bonus
+            self.ghost_bonus *= 2
+          elif sprite.mode in ['chasing', 'scattering']:
+            self.animation = self.app.animations['pacman-dying-' + self.direction]
+            self.dying = True
+            self.speed = 0
+            break
+          else:
+            pass
+
           
       elif isinstance(sprite, (Door, Wall)):
           sizes = [tilesize - self.speed] * 2
           rect = pygame.Rect(shift[self.direction], sizes)
           if rect.colliderect(sprite.rect):
             shift[self.direction] = (x, y)
-
+      
       elif isinstance(sprite, Dot):
         if pacman.distance_to(sprite.get_pos()) <= (tilesize / 2):
+          self.score += 10
           sprite.kill()
+          continue
+        total_pills += 1
           
       elif isinstance(sprite, Energizer):
         if pacman.distance_to(sprite.get_pos()) <= (tilesize / 2):
+          for ghost in self.app.ghosts:
+            ghost.change_mode('frightened')
+          self.ghost_bonus = 200
+          self.score += 50
           sprite.kill()
-          
+          continue
+        total_pills += 1
+        
+    if total_pills == 0:
+      print('victory!', self.score)
+      self.app.running = False
     
-    newpos = shift[self.direction]
-    self.set_pos(newpos)
+
+    x, y = shift[self.direction]
+    maxx, maxy = self.app.screen.get_size()
+    
+    #walking through tunnel
+    if x >= maxx and self.direction == 'right':
+      x = -tilesize
+    elif x <= (-tilesize) and self.direction == 'left':
+      x = maxx
+    
+    self.set_pos((x, y))
     self.redraw()
       
 
@@ -528,35 +614,35 @@ class App(object):
         row, col = adjust(row), adjust(col)
         self.textures[key] = tileset.crop(col, row)
         
-      factory = {
-        'e': Energizer,
-        'd': Dot,
-        'w': Wall,
-        'o': Door,
-        'i': Inky,
-        'n': Pinky,
-        'c': Clyde,
-        'b': Blinky,
-        'p': Pacman
-      }
-      # sprites = factory.fromkeys doesnt work correct
-      sprites = dict([(k, []) for k in factory])
-      
-      for row, line in enumerate(plan):
-        for col, typ in enumerate(line):
-          if typ in factory:
-            pos = adjust(col), adjust(row)
-            sprite = factory[typ](pos, self)
-            sprites[typ].append(sprite)
-      
-      #order important!
-      for typ in 'odweincbp':
-        [self.sprites.add(s) for s in sprites[typ]]
-        
-      self.ghosts = [sprites[v][0] for v in 'bnic']
-      self.pacman = sprites['p'][0]   
+    factory = {
+      'e': Energizer,
+      'd': Dot,
+      'w': Wall,
+      'o': Door,
+      'i': Inky,
+      'n': Pinky,
+      'c': Clyde,
+      'b': Blinky,
+      'p': Pacman
+    }
+    # sprites = factory.fromkeys doesnt work correct
+    sprites = dict([(k, []) for k in factory])
+    
+    for row, line in enumerate(plan):
+      for col, typ in enumerate(line):
+        if typ in factory:
+          pos = adjust(col), adjust(row)
+          sprite = factory[typ](pos, self)
+          sprites[typ].append(sprite)
+    
+    #order important!
+    for typ in 'odweincbp':
+      [self.sprites.add(s) for s in sprites[typ]]
+    
+    self.ghosts = [sprites[v][0] for v in 'bnic']
+    self.pacman = sprites['p'][0]   
 
-      self.grid = Grid(plan, tilesize)
+    self.grid = Grid(plan, tilesize)
     
     controls = [K_UP, K_DOWN, K_LEFT, K_RIGHT]
     clock = pygame.time.Clock()
