@@ -52,7 +52,8 @@ plan = [
 
 
 class GridCell(object):
-  def __init__(self, row, col, cell, cost):
+  def __init__(self, tilesize, row, col, cell, cost):
+    self.tilesize = tilesize
     self.parent = None
     self.cell = cell
     self.cost = cost
@@ -61,6 +62,9 @@ class GridCell(object):
     self.g = 0
     self.h = 0
     self.f = 0
+    
+  def get_pos(self):
+    return self.col * self.tilesize, self.row * self.tilesize
     
   def __eq__(self, other):
     return (self.row == other.row) and (self.col == other.col)
@@ -74,9 +78,9 @@ class GridCell(object):
 
 class Grid(object):
   def __init__(self, grid, tilesize):
-    rows = range(len(grid))
-    cols = range(len(grid[0]))
-    self.grid = [[0 for _ in cols] for _ in rows]
+    rows = len(grid)
+    cols = len(grid[0])
+    self.grid = [[0 for _ in range(cols)] for _ in range(rows)]
     
     costs = {
       'other_types_default': 1,
@@ -85,9 +89,12 @@ class Grid(object):
 
     for row, line in enumerate(grid):
       for col, typ in enumerate(line):
-        self.grid[row][col] = GridCell(row, col, typ, costs.get(typ, 1))
+        cell = GridCell(tilesize, row, col, typ, costs.get(typ, 1))
+        self.grid[row][col] = cell
     
     self.tilesize = tilesize
+    self.rows = rows - 1
+    self.cols = cols - 1
     
     
   def get_by_pos(self, pos):
@@ -95,24 +102,21 @@ class Grid(object):
     return self.get(row, col)
     
   def get(self, row, col):
-    rows = len(self.grid) - 1
-    cols = len(self.grid[0]) - 1
-
-    if row < 0 or row > rows or col < 0 or col > cols:
-      return GridCell(row, col, 'tunnel', 0)
+    if row < 0 or row > self.rows or col < 0 or col > self.cols:
+      return GridCell(self.tilesize, row, col, 'tunnel', 0)
     return self.grid[row][col]
     
   def get_neighbors(self, cell):
     if cell.cell == 'tunnel':
-      if cell.col == -1:
+      if cell.col < 0:
         return {
-          'left': self.get(cell.row, 18),
+          'left': self.get(cell.row, 19),
           'right': self.get(cell.row, 0)
         }
-      elif cell.col == 19:
+      elif cell.col > self.cols:
         return {
           'left': self.get(cell.row, 18),
-          'right': self.get(cell.row, 0)
+          'right': self.get(cell.row, -1)
         }
       return {}
   
@@ -276,6 +280,7 @@ class Ghost(Sprite):
     super().__init__(pos, image)
     self.mode = 'waiting' # chasing, frightened, scattering
     self.action = 'idle'  # walking, going-home, blinking
+    self.new_direction = True
     self.direction = 'right'
     self.animation = None
     self.name = name
@@ -286,7 +291,7 @@ class Ghost(Sprite):
     
     self.blink_timer = None
     self.switch_timer = None
-    self.change_mode('scattering')
+    self.animate()
     
   def is_at_home(self):
     return self.get_pos() == self.get_home_pos()
@@ -343,88 +348,104 @@ class Ghost(Sprite):
       if neighbor and self.is_walkable(neighbor):
         self.path = [neighbor]
         break
-        
-  def get_speed(self):
-    modes = {
-      'chasing': {
-        'walking': 3
-      },
-      'scattering': {
-        'walking': 3
-      },
-      'frightened': {
-        'walking': 2,
-        'blinking': 2,
-        'going-home': 5
-      }
-    }
-    mode_limits = modes.get(self.mode, {})
-    return mode_limits.get(self.action, 3)
-      
       
   def blink(self):
     self.action = 'blinking'
     
+  def send_to_home(self): 
+    self.blink_timer = None
+    self.switch_timer = None
+    self.action = 'going-home'
+    self.change_animation()
+    self.speed = 5
+    
+  def animate(self):
+    self.reset()
+    self.switch_mode()
+    
   def switch_mode(self):
     if self.mode == 'scattering':
-      self.change_mode('chasing')
+      self.mode = 'chasing'
     else:
-      self.change_mode('scattering')
-    
-  def change_mode(self, mode):
-    if self.action == 'going-home' and mode == 'frightened':
-      return
-    
-    if mode == 'frightened':
-      self.blink_timer = Timer(7000, self.blink)    
+      self.mode = 'scattering'
     self.switch_timer = Timer(10000, self.switch_mode)
-    
-    self.mode = mode
+    self.blink_timer = None
     self.action = 'walking'
     self.change_animation()
-    self.speed = self.get_speed()
+    self.path = self.path[:1]
+    self.speed = 3
+      
+  def frighten(self):
+    self.switch_timer = Timer(10000, self.switch_mode)
+    self.blink_timer = Timer(7000, self.blink)
+    self.mode = 'frightened'
+    self.action = 'walking'
+    self.change_animation()
+    self.path = self.path[:1]
+    self.speed = 2
+
+    
+  def reset(self):
+    self.switch_timer = None
+    self.blink_timer = None
+    self.mode = 'waiting'
+    self.action = 'idle'
+    self.change_animation()
+    self.speed = 0
     self.path = []
 
   def update(self):  
     timers = [self.blink_timer, self.switch_timer]
     [timer.update() for  timer in timers if timer]
-        
-
-    x, y = self.get_pos()
-    maxx, maxy = self.app.screen.get_size()
     
-    #walking through tunnel
-    if x >= maxx and self.direction == 'right':
-      x = -tilesize
-    elif x <= (-tilesize) and self.direction == 'left':
-      x = maxx
-      
+    x, y = self.get_pos()
+    position = pygame.math.Vector2((x, y))
     ghost_cell = self.app.grid.get_by_pos((x, y))
     neighbors = self.app.grid.get_neighbors(ghost_cell)
-    position = pygame.math.Vector2(x, y)
-    direction_vec = None
+    
     if self.path:
       target_cell = self.path[0]
-      target_x = target_cell.col * self.app.tilesize
-      target_y = target_cell.row * self.app.tilesize
-      target_vec = pygame.math.Vector2(target_x, target_y)
       
-      direction_vec = target_vec - position
-      if direction_vec.length() > 2 * tilesize:
-        self.path = []
+      if self.new_direction:
+        for new_direction in neighbors:
+          if neighbors[new_direction] == target_cell:
+            self.change_direction(new_direction)
+            self.new_direction = False
+            break
+
+      target_x, target_y = target_cell.get_pos()
+      destination = pygame.math.Vector2(target_x, target_y)
+      
+      direction = destination - position
+      direction = destination - position
+      distance = direction.length()
+      
+      if distance:
+        speed = min(self.speed, distance)
+        shift = direction.normalize() * speed
+        shift.xy = [round(v) for v in shift]
+        if abs(shift.x) < abs(shift.y):
+          shift.x = 0
+        else:
+          shift.y = 0
         
-      if direction_vec.length() < self.speed:
-        self.path.pop(0)
-      
-      for new_direction in neighbors:
-        if neighbors[new_direction] == target_cell:
-          self.change_direction(new_direction)
+        newpos = (position + shift)
+        self.set_pos(newpos)
+      else:  
+        if target_cell.cell == 'tunnel':
+          neighbors = self.app.grid.get_neighbors(target_cell)
+          ghost_cell = neighbors[self.direction]
+          x, y = ghost_cell.get_pos()
+          self.set_pos((x, y))
           
-    else:
+        self.new_direction = True
+        self.path.pop(0)
+
+    else:    
       if self.mode == 'frightened':
         if self.action == 'going-home':
           if self.is_at_home():
-            self.change_mode('scattering')
+            self.animate()
           else:
             self.path = self.pathfind(self.get_home_pos())
         else:
@@ -435,17 +456,10 @@ class Ghost(Sprite):
         
       elif self.mode == 'chasing':
         self.path = self.pathfind(self.app.pacman.get_pos())
-
-      
-    if direction_vec:
-      self.speed = self.get_speed()
-      distance = direction_vec.length()
-      if distance < self.speed:
-        self.speed = distance
-      shift = direction_vec.normalize() * self.speed
-      newpos = (position + shift).xy
-      self.set_pos(newpos)
     self.redraw()
+      
+
+    
     
     
     
@@ -486,7 +500,6 @@ class Pacman(Sprite):
     self.app = app
     
     self.ghost_bonus = 200
-    
     self.start_timer = None
        
   def change_direction(self, keyname):
@@ -513,8 +526,8 @@ class Pacman(Sprite):
       
   def game_start(self):
     for ghost in self.app.ghosts:
-      ghost.change_mode('scattering')
-    
+      ghost.animate()
+  
     self.start_timer = None
     self.dying = False
 
@@ -569,20 +582,15 @@ class Pacman(Sprite):
             ts_score = TimedSprite(ghost_pos, self.app, ts_name, 800)
             self.app.sprites.add(ts_score)
             
-            sprite.action = 'going-home'
+            sprite.send_to_home()
             self.score += self.ghost_bonus
             self.ghost_bonus *= 2
-          elif sprite.mode in ['chasing', 'scattering']:
+          elif sprite.mode in ['scattering', 'chasing']:
             self.animation = self.app.animations['pacman-dying-' + self.direction]
             self.dying = True
             
             for ghost in self.app.ghosts:
-              ghost.change_mode('waiting')
-              ghost.speed = 0
-            
-            break
-          else:
-            pass
+              ghost.reset()
 
           
       elif isinstance(sprite, (Door, Wall)):
@@ -601,7 +609,7 @@ class Pacman(Sprite):
       elif isinstance(sprite, Energizer):
         if pacman.distance_to(sprite.get_pos()) <= (tilesize / 2):
           for ghost in self.app.ghosts:
-            ghost.change_mode('frightened')
+            ghost.frighten()
           self.ghost_bonus = 200
           self.score += 50
           sprite.kill()
