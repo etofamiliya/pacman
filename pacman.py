@@ -12,44 +12,6 @@ with contextlib.redirect_stdout(None):
 from pygame.locals import *
 from random import shuffle
 
-tilesize = 32
-
-'''
-  e => Energizer
-  d => Dot
-  w => Wall
-  p => Pacman
-  b => Blinky
-  c => Clyde
-  n => piNky
-  i => Inky
-  o => dOor
-  _ => empty places
-'''
-plan = [
-  'wwwwwwwwwwwwwwwwwww',
-  'wedddddddwdddddddew',
-  'wdwwdwwddwddwwdwwdw',
-  'wdwwdwdddddddwdwwdw',
-  'wddddddwwwwwddddddw',
-  'wdwwdwdddwdddwdwwdw',
-  'wddddwdddbdddwddddw',
-  'wwwwdwdwwowwdwdwwww',
-  'dddddddw_n_wddddddd',
-  'wwwwdwdwi_cwdwdwwww',
-  'wddddwdwwwwwdwddddw',
-  'wdwwdwdddpdddwdwwdw',
-  'wddwdddwwwwwdddwddw',
-  'wwdwdwdddwdddwdwdww',
-  'wwdddddddddddddddww',
-  'wddwwddwwwwwddwwddw',
-  'wdwwwwdddwdddwwwwdw',
-  'wedddddddddddddddew',
-  'wwwwwwwwwwwwwwwwwww'
-]
-
-
-
 
 class GridCell(object):
   def __init__(self, tilesize, row, col, cell, cost):
@@ -82,14 +44,11 @@ class Grid(object):
     cols = len(grid[0])
     self.grid = [[0 for _ in range(cols)] for _ in range(rows)]
     
-    costs = {
-      'other_types_default': 1,
-      'w': 100
-    }
-
     for row, line in enumerate(grid):
       for col, typ in enumerate(line):
-        cell = GridCell(tilesize, row, col, typ, costs.get(typ, 1))
+        gametype = GameTypes.fullname(typ)
+        cost = GameTypes.get_pathing_cost(gametype)
+        cell = GridCell(tilesize, row, col, gametype, cost)
         self.grid[row][col] = cell
     
     self.tilesize = tilesize
@@ -225,7 +184,7 @@ class Sprite(pygame.sprite.DirtySprite):
     super().__init__()
     self.rect = image.get_rect()
     self.rect.topleft = pos
-    self.initial_pos = pos #?
+    self.initial_pos = pos
     self.image = image
     
   def get_pos(self):
@@ -278,8 +237,8 @@ class Ghost(Sprite):
   def __init__(self, pos, app, name):
     image = app.textures[name]
     super().__init__(pos, image)
-    self.mode = 'waiting' # chasing, frightened, scattering
-    self.action = 'idle'  # walking, going-home, blinking
+    self.mode = 'waiting'
+    self.action = 'idle'
     self.new_direction = True
     self.direction = 'right'
     self.animation = None
@@ -300,7 +259,7 @@ class Ghost(Sprite):
     return self.initial_pos      
     
   def is_walkable(self, cell):
-    return cell.cell != 'w'
+    return cell.cell != 'wall'
     
   def is_vulnerable(self):
     return self.mode == 'frightened' and self.action != 'going-home'
@@ -512,7 +471,7 @@ class Pacman(Sprite):
     self.new_direction = converter[keyname]
  
   def is_walkable(self, cell):
-    return cell.cell not in 'wo'
+    return cell.cell not in ('wall', 'door')
   
   def can_move_to(self, pos, direction):
     cell = self.app.grid.get_by_pos(pos)
@@ -650,25 +609,114 @@ class Tileset(object):
     return result
 
 
+
+class GameTypes(object):
+  pacman_layer = 5
+  ghosts_layer = 4
+  walls_layer  = 3
+  dots_layer   = 2
+  door_layer   = 1
+
+  @staticmethod
+  def fullname(char):
+    converter = {
+      'e': 'energizer',
+      'p': 'pacman',
+      'b': 'blinky',
+      'c': 'clyde',
+      'n': 'pinky',
+      'i': 'inky',
+      'o': 'door',
+      'w': 'wall',
+      'd': 'dot'
+    }
+    return converter.get(char, '')
+  
+  @staticmethod
+  def layer(gametype):
+    layers = {
+      'energizer': 2,
+      'pacman': 5,
+      'blinky': 4,
+      'clyde': 4,
+      'pinky': 4,
+      'inky': 4,
+      'door': 1,
+      'wall': 3,
+      'dot': 2
+    }
+    return layers.get(gametype, 0)
+    
+  @staticmethod
+  def get_pathing_cost(gametype):
+    costs = {
+      'default': 1,
+      'wall': 100
+    }
+    return costs.get(gametype, 1)
+  
+  @staticmethod
+  def create(gametype, pos, app):
+    factory = {
+      'energizer': Energizer,
+      'pacman': Pacman,
+      'blinky': Blinky,
+      'clyde': Clyde,
+      'pinky': Pinky,
+      'inky': Inky,
+      'door': Door,
+      'wall': Wall,
+      'dot': Dot
+    }
+    return factory[gametype](pos, app)
+    
+
+
+
 class App(object):
   def __init__(self):
-    width = len(plan[0]) * tilesize
-    height = len(plan) * tilesize
-    self.screen = pygame.display.set_mode((width, height))
     self.sprites = pygame.sprite.LayeredDirty()
-    self.tilesize = tilesize
     self.running = True
     self.animations = {}
     self.textures = {}
     
-  def launch(self): 
-    adjust = lambda r: r * self.tilesize
-
+  def launch(self):
+    plan = [
+      'wwwwwwwwwwwwwwwwwww',
+      'wedddddddwdddddddew',
+      'wdwwdwwddwddwwdwwdw',
+      'wdwwdwdddddddwdwwdw',
+      'wddddddwwwwwddddddw',
+      'wdwwdwdddwdddwdwwdw',
+      'wddddwdddbdddwddddw',
+      'wwwwdwdwwowwdwdwwww',
+      'dddddddw_n_wddddddd',
+      'wwwwdwdwi_cwdwdwwww',
+      'wddddwdwwwwwdwddddw',
+      'wdwwdwdddpdddwdwwdw',
+      'wddwdddwwwwwdddwddw',
+      'wwdwdwdddwdddwdwdww',
+      'wwdddddddddddddddww',
+      'wddwwddwwwwwddwwddw',
+      'wdwwwwdddwdddwwwwdw',
+      'wedddddddddddddddew',
+      'wwwwwwwwwwwwwwwwwww'
+    ]
+    
+    
+    tilesize = 32
+    self.tilesize = tilesize
+    adjust = lambda r: r * tilesize
+    
+    width = adjust(len(plan[0]))
+    height = adjust(len(plan))
+    self.screen = pygame.display.set_mode((width, height))
+    
     media_dir = os.path.join(os.getcwd(), 'media')
     characters_json = os.path.join(media_dir, 'characters.json')
     with open(characters_json) as characters:
       jsondata = json.load(characters)
-      tileset = Tileset(jsondata['filepath'], self.tilesize)
+      tileset = Tileset(jsondata['filepath'], tilesize)
       
       for key in jsondata['animations']:
         animation = jsondata['animations'][key]
@@ -687,34 +735,20 @@ class App(object):
         row, col = jsondata['textures'][key]
         row, col = adjust(row), adjust(col)
         self.textures[key] = tileset.crop(col, row)
-        
-    factory = {
-      'e': Energizer,
-      'd': Dot,
-      'w': Wall,
-      'o': Door,
-      'i': Inky,
-      'n': Pinky,
-      'c': Clyde,
-      'b': Blinky,
-      'p': Pacman
-    }
-    # sprites = factory.fromkeys doesnt work correct
-    sprites = dict([(k, []) for k in factory])
+
     
     for row, line in enumerate(plan):
       for col, typ in enumerate(line):
-        if typ in factory:
+        gametype = GameTypes.fullname(typ)
+        if gametype:
           pos = adjust(col), adjust(row)
-          sprite = factory[typ](pos, self)
-          sprites[typ].append(sprite)
-    
-    #order important!
-    for typ in 'odweincbp':
-      [self.sprites.add(s) for s in sprites[typ]]
-    
-    self.ghosts = [sprites[v][0] for v in 'bnic']
-    self.pacman = sprites['p'][0]   
+          layr = GameTypes.layer(gametype)
+          sprite = GameTypes.create(gametype, pos, self)
+          self.sprites.add(sprite, layer=layr)
+
+    from_layer = self.sprites.get_sprites_from_layer
+    self.ghosts = from_layer(GameTypes.ghosts_layer)
+    self.pacman = from_layer(GameTypes.pacman_layer)[0]
 
     self.grid = Grid(plan, tilesize)
     
@@ -736,6 +770,7 @@ class App(object):
           self.running = False
           return
       
+      self.master.update()
       self.sprites.update()
       self.screen.fill((0, 0, 0))
       changes = self.sprites.draw(self.screen)
@@ -756,3 +791,10 @@ if __name__ == '__main__':
   
   # pygame.mixer.quit()
   pygame.quit()
+  
+  
+  
+  
+  
+  
+  
