@@ -447,18 +447,22 @@ class Inky(Ghost):
     
 class Pacman(Sprite):
   def __init__(self, pos, app):
+    self.channel = pygame.mixer.find_channel(True)
+
     image = app.textures['pacman']
     super().__init__(pos, image)
     self.new_direction = None
     self.direction = 'right'
     self.animation = None
     self.dying = False
+    self.bonus = 200
+    self.shift = {}
     self.speed = 0
-    self.dirty = 2
     self.score = 0
+    self.dirty = 2
     self.app = app
+
     
-    self.ghost_bonus = 200
     self.start_timer = None
        
   def change_direction(self, keyname):
@@ -489,6 +493,12 @@ class Pacman(Sprite):
   
     self.start_timer = None
     self.dying = False
+    
+  def die(self):
+    self.animation = self.app.animations['pacman-dying-' + self.direction]
+    death_sound = self.app.sounds['death']
+    self.channel.play(death_sound)
+    self.dying = True
 
     
   def update(self):
@@ -511,8 +521,7 @@ class Pacman(Sprite):
     
     x, y = self.get_pos()
     tilesize = self.app.tilesize
-
-    if self.new_direction:      
+    if self.new_direction:
       multiple_of = lambda v: (v % tilesize) <= self.speed
       can_turn_to = multiple_of(x) and multiple_of(y) 
       can_move_to = self.can_move_to((x, y), self.new_direction)
@@ -522,74 +531,78 @@ class Pacman(Sprite):
         self.animation = self.app.animations['pacman-' + self.direction]
         self.new_direction = None
         self.speed = 3
-
+  
     shift = {
       'up': (x, y - self.speed),
       'down': (x, y + self.speed),
       'left': (x - self.speed, y),
       'right': (x + self.speed, y)
     }
-    
-    total_pills = 0
-    pacman = pygame.math.Vector2(self.get_pos())
+  
+    pacman_vec = pygame.math.Vector2((x, y))
     for sprite in self.app.sprites.sprites():
-      if sprite in self.app.ghosts:
-        ghost_pos = sprite.get_pos()
-        if pacman.distance_to(ghost_pos) <= (tilesize / 2):
-          if sprite.is_vulnerable():
-            ts_name = str(self.ghost_bonus)
-            ts_score = TimedSprite(ghost_pos, self.app, ts_name, 800)
-            self.app.sprites.add(ts_score)
-            
-            sprite.send_to_home()
-            self.score += self.ghost_bonus
-            self.ghost_bonus *= 2
-          elif sprite.mode in ['scattering', 'chasing']:
-            self.animation = self.app.animations['pacman-dying-' + self.direction]
-            self.dying = True
-            
-            for ghost in self.app.ghosts:
-              ghost.reset()
-
+      sprite_pos = sprite.get_pos()
+      sprite_vec = pygame.math.Vector2(sprite_pos)
+      distance = pacman_vec.distance_to(sprite_vec)
+      collided = distance <= (tilesize / 2)
           
-      elif isinstance(sprite, (Door, Wall)):
+      if isinstance(sprite, (Door, Wall)):
           sizes = [tilesize - self.speed] * 2
           rect = pygame.Rect(shift[self.direction], sizes)
           if rect.colliderect(sprite.rect):
             shift[self.direction] = (x, y)
-      
-      elif isinstance(sprite, Dot):
-        if pacman.distance_to(sprite.get_pos()) <= (tilesize / 2):
-          self.score += 10
-          sprite.kill()
-          continue
-        total_pills += 1
-          
-      elif isinstance(sprite, Energizer):
-        if pacman.distance_to(sprite.get_pos()) <= (tilesize / 2):
-          for ghost in self.app.ghosts:
-            ghost.frighten()
-          self.ghost_bonus = 200
-          self.score += 50
-          sprite.kill()
-          continue
-        total_pills += 1
+            
+      elif collided:
+        if isinstance(sprite, Dot):
+            eating_sound = self.app.sounds['eating']
+            self.channel.queue(eating_sound)
         
-    if total_pills == 0:
-      print('victory!', self.score)
-      self.app.running = False
-    
+            self.score += 10
+            sprite.kill()
 
-    x, y = shift[self.direction]
-    maxx, maxy = self.app.screen.get_size()
-    
-    #walking through tunnel
-    if x >= maxx and self.direction == 'right':
-      x = -tilesize
-    elif x <= (-tilesize) and self.direction == 'left':
-      x = maxx
-    
-    self.set_pos((x, y))
+        elif isinstance(sprite, Energizer):
+            for ghost in self.app.ghosts:
+              ghost.frighten()
+              
+            eating_bonus = self.app.sounds['eating_bonus']
+            self.channel.play(eating_bonus)
+              
+            self.bonus = 200
+            self.score += 50
+            sprite.kill()
+            
+        elif isinstance(sprite, Ghost):
+          if sprite.is_vulnerable():
+            ts_name = str(self.bonus)
+            ts_score = TimedSprite(sprite_pos, self.app, ts_name, 800)
+            self.app.sprites.add(ts_score)
+            
+            eating_ghosts = self.app.sounds['eating_ghosts']
+            self.channel.play(eating_ghosts)
+            
+            self.score += self.bonus
+            sprite.send_to_home()
+            self.bonus *= 2
+          elif sprite.mode in ['scattering', 'chasing']:
+            for ghost in self.app.ghosts:
+              ghost.reset()
+            self.die()
+
+
+
+
+
+    if self.speed:      
+      x, y = shift[self.direction]
+      
+      #walking through tunnel
+      maxx, maxy = self.app.screen.get_size()
+      if x >= maxx and self.direction == 'right':
+        x = -tilesize
+      elif x <= (-tilesize) and self.direction == 'left':
+        x = maxx
+      
+      self.set_pos((x, y))
     self.redraw()
       
 
@@ -679,6 +692,30 @@ class App(object):
     self.running = True
     self.animations = {}
     self.textures = {}
+    self.sounds = {}
+    self.music = {}
+    
+    self.music_playing = False
+    self.scared_channel = pygame.mixer.find_channel()
+    
+  def game_update(self):
+    if not self.music_playing:
+      pygame.mixer.music.load(self.music['main_theme'])
+      pygame.mixer.music.set_volume(0.4)
+      pygame.mixer.music.play()
+      self.music_playing = True
+    
+    from_layer = self.sprites.get_sprites_from_layer
+    ghosts = from_layer(GameTypes.ghosts_layer)
+    for ghost in ghosts:
+      if ghost.is_vulnerable():
+        self.scared_channel.queue(self.sounds['ghosts_scared'])
+        continue
+    
+    dots = from_layer(GameTypes.dots_layer)
+    if len(dots) == 0:
+      print('victory! ', self.pacman.score)
+      self.running = False
     
   def launch(self):
     plan = [
@@ -736,7 +773,19 @@ class App(object):
         row, col = adjust(row), adjust(col)
         self.textures[key] = tileset.crop(col, row)
 
+    for path, _, names in os.walk(media_dir):
+      for name in names:
+        fullpath = os.path.join(path, name)
+        filename, extension = name.split('.')
+        if extension == 'wav':
+          sound = pygame.mixer.Sound(fullpath)
+          self.sounds[filename] = sound
+          sound.set_volume(0.6)
+
+        elif extension == 'mp3':
+          self.music[filename] = fullpath
     
+        
     for row, line in enumerate(plan):
       for col, typ in enumerate(line):
         gametype = GameTypes.fullname(typ)
@@ -770,7 +819,7 @@ class App(object):
           self.running = False
           return
       
-      self.master.update()
+      self.game_update()
       self.sprites.update()
       self.screen.fill((0, 0, 0))
       changes = self.sprites.draw(self.screen)
@@ -781,7 +830,7 @@ class App(object):
 
 if __name__ == '__main__':
   pygame.init()
-  # pygame.mixer.init()
+  pygame.mixer.init()
   pygame.key.set_repeat(1, 1)
   pygame.mouse.set_visible(False)
   os.environ["SDL_VIDEO_CENTERED"] = "1"
@@ -789,7 +838,7 @@ if __name__ == '__main__':
   
   App().launch()
   
-  # pygame.mixer.quit()
+  pygame.mixer.quit()
   pygame.quit()
   
   
