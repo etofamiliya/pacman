@@ -151,16 +151,17 @@ class Animation(object):
     self.timer = None
     self.frame = 0
 
+  @property
   def finished(self):
-    return self.frame + 1 == len(self.frames)
+      return self.frame + 1 == len(self.frames)
     
   def rewind(self):
     self.frame = 0
     
   def next_frame(self):
-    if self.repeat or not self.finished():
+    if self.repeat or not self.finished:
       self.timer = Timer(self.delay, self.next_frame)
-      self.frame = 0 if self.finished() else self.frame + 1
+      self.frame = 0 if self.finished else self.frame + 1
 
   def update(self):
     if self.timer:
@@ -192,10 +193,8 @@ class TimedSprite(Sprite):
     image = app.textures[name]
     super().__init__(pos, image)
     self.timer = Timer(duration, self.kill)
+    self.update = self.timer.update
     self.dirty = 2
-    
-  def update(self):
-    self.timer.update()
 
 
 class Dot(Sprite):
@@ -300,14 +299,13 @@ class Ghost(Sprite):
       if neighbor and self.is_walkable(neighbor):
         self.path = [neighbor]
         break
-      
-  def blink(self):
-    self.action = 'blinking'
+    
+  def change_action(self, newaction):
+    self.action = newaction
     self.change_animation()
     
   def send_to_home(self): 
-    self.action = 'going-home'
-    self.change_animation()
+    self.change_action('going-home')
     self.reset_timers()
     self.speed = 5
     
@@ -330,28 +328,26 @@ class Ghost(Sprite):
       self.mode = 'scattering'
 
     self.add_timer(5000, self.switch_mode)
-    self.action = 'walking'
-    self.change_animation()
+    self.change_action('walking')
     self.path = self.path[:1]
     self.speed = 3
       
   def frighten(self):
     self.reset_timers()
+    blink = lambda: self.change_action('blinking')
     self.add_timer(8000, self.switch_mode)
-    self.add_timer(6500, self.blink)
+    self.add_timer(6500, blink)
     self.mode = 'frightened'
-    self.action = 'walking'
-    self.change_animation()
+    self.change_action('walking')
     self.path = self.path[:1]
     self.speed = 2
 
   def reset(self):
     self.mode = ''
-    self.action = ''
-    self.change_animation()
+    self.change_action('')
     self.reset_timers()
-    self.path = []
     self.speed = 0
+    self.path = []
 
   def update(self):  
     grid = self.app.game.grid
@@ -375,9 +371,7 @@ class Ghost(Sprite):
       destination = pygame.math.Vector2(target_x, target_y)
       
       direction = destination - position
-      direction = destination - position
       distance = direction.length()
-      
       if distance:
         speed = min(self.speed, distance)
         shift = direction.normalize() * speed
@@ -443,12 +437,12 @@ class Pacman(Sprite):
   def __init__(self, pos, app):
     image = app.textures['pacman']
     super().__init__(pos, image)
+    self.sprites = app.game.sprites.sprites
     self.new_direction = None
     self.direction = 'right'
     self.animation = None
     self.game = app.game
     self.dying = False
-    self.shift = {}
     self.speed = 0
     self.dirty = 2
     self.app = app
@@ -497,10 +491,10 @@ class Pacman(Sprite):
     
   def update(self):
     if self.dying:
-      if self.animation.finished():
+      if self.animation.finished:
         self.app.game.end_game_check()
       self.redraw()
-      return
+      return     
     
     x, y = self.get_pos()
     tilesize = self.app.tilesize
@@ -514,8 +508,32 @@ class Pacman(Sprite):
         self.new_direction = None
         self.change_animation()
         
+    shift = {
+      'up': (x, y - self.speed),
+      'down': (x, y + self.speed),
+      'left': (x - self.speed, y),
+      'right': (x + self.speed, y)
+    }
+    
+    pacman_vec = pygame.math.Vector2((x, y))
+    for sprite in self.sprites():
+      sprite_pos = sprite.get_pos()
+      sprite_vec = pygame.math.Vector2(sprite_pos)
+      distance = pacman_vec.distance_to(sprite_vec)
+      collided = distance <= (tilesize / 2)
+          
+      if isinstance(sprite, (Door, Wall)):
+        sizes = [tilesize - self.speed] * 2
+        topleft = shift[self.direction]
+        rect = pygame.Rect(topleft, sizes)
+        if rect.colliderect(sprite.rect):
+          shift[self.direction] = (x, y)
+            
+      elif collided:
+        self.game.on_collision(sprite)
+        
     if self.speed:      
-      x, y = self.shift[self.direction]
+      x, y = shift[self.direction]
       
       #walking through tunnel
       maxx, maxy = self.app.screen.get_size()
@@ -607,21 +625,16 @@ class GameTypes(object):
 
 class TextLabel(Sprite):
   def __init__(self, font, text, x_center, y_offset, color):
-    self.x_center = x_center
-    self.y_offset = y_offset
-    self.color = color
-    self.font = font
-    self.text = text
-    
-    super().__init__((0, 0), pygame.Surface((80, 32)))
+    super().__init__((0, 0), pygame.Surface((0, 0)))
+    self.redraw = lambda t: font.render(t, True, color)
+    self.newpos = lambda i: (x_center - (i.get_width() / 2), y_offset)
     self.set_text(text)
-
+    
   def set_text(self, text):
-    self.image = self.font.render(text, True, self.color)
-    new_x = self.x_center - (self.image.get_width() / 2)
-    self.set_pos((new_x, self.y_offset))
+    self.image = self.redraw(text)
+    self.set_pos(self.newpos(self.image))
     self.text = text
-  
+
 
 class EventHandler(object):
   def __init__(self, app):
@@ -629,11 +642,12 @@ class EventHandler(object):
     self.clear = self.observers.clear
     self.app = app
     
-  def add_observer(self, obs, event_type):
-    if event_type in self.observers:
-      self.observers[event_type].append(obs)
-    else:
-      self.observers[event_type] = [obs]
+  def add_observer(self, obs, *types):
+    for event_type in types:
+      if event_type in self.observers:
+        self.observers[event_type].append(obs)
+      else:
+        self.observers[event_type] = [obs]
     
   def handle(self):
     for event in pygame.event.get():
@@ -641,11 +655,30 @@ class EventHandler(object):
         obs.react(self.app, event)
 
 
-class Menu(object):
-  def __init__(self, app):
-    self.sprites = pygame.sprite.RenderUpdates()
-    self.events = EventHandler(app)
+class Scene(object):
+  def __init__(self, app, sprites):
     self.app = app
+    self.sprites = sprites
+    self.full_redraw = True
+    self.events = EventHandler(app)
+    self.events.add_observer(self, KEYDOWN, QUIT)
+  
+  def get_rendering_area(self):
+    if self.full_redraw:
+      self.full_redraw = False
+      return self.app.screen.get_rect()
+    return self.sprites.draw(self.app.screen)
+
+  @property
+  def updates(self):
+    self.events.handle()
+    self.sprites.update()
+    return self.get_rendering_area()
+
+
+class Menu(Scene):
+  def __init__(self, app):
+    super().__init__(app, pygame.sprite.RenderUpdates())
     
     x_center = app.screen.get_width() / 2
 
@@ -699,10 +732,6 @@ class Menu(object):
     self.channel = pygame.mixer.find_channel()
     self.music_playing = True
     
-    self.events.add_observer(self, KEYDOWN)
-    self.events.add_observer(self, QUIT)
-    self.full_redraw = True
-    
   def react(self, app, event):
     if event.type == KEYDOWN:
       alt_f4 = event.key == K_F4 and bool(event.mod & KMOD_ALT)
@@ -714,19 +743,17 @@ class Menu(object):
       app.close()
       
   def show_game(self):
-    newgame = Game(self.app)
-    self.app.scene = newgame
-    self.app.game = newgame
-    self.app.timers = []
-
+    self.app.show_scene(Game)()
+    self.app.game = self.app.scene
+    
   def input_box_react(self, app, event):
     if event.key == K_RETURN:
       player = self.input_box.text.strip('_ ')
       if len(player):
         self.input_box.set_text('_' * 12)
         app.set_timer(200, self.show_game)
-        app.player = player
-    
+        self.app.player = player
+        
     elif event.key == K_BACKSPACE:
       text = self.input_box.text.strip('_ ')[:-1]
       self.input_box.set_text(text.ljust(12, '_')[:12])
@@ -742,29 +769,19 @@ class Menu(object):
     self.sprites.add(sprite)
     return sprite
     
-  def get_rendering_area(self):
-    if self.full_redraw:
-      self.full_redraw = False
-      return self.app.screen.get_rect()
-    return self.sprites.draw(self.app.screen)
-    
   def update(self):
     if not self.music_playing:
       pygame.mixer.music.load(self.music['main_theme'])
       pygame.mixer.music.set_volume(0.4)
       pygame.mixer.music.play()
       self.music_playing = True
-    
-    self.events.handle()
-    self.sprites.update()
-    return self.get_rendering_area()
+    return self.updates
     
 
-class Scores(object):
+class Scores(Scene):
   def __init__(self, app):
-    self.sprites = pygame.sprite.RenderUpdates()
-    self.events = EventHandler(app)
-    self.app = app
+    super().__init__(app, pygame.sprite.RenderUpdates())
+    self.update = lambda: self.updates
     
     x_center = app.screen.get_width() / 2
     inconsolata = app.fonts['Inconsolata']
@@ -776,27 +793,10 @@ class Scores(object):
     
     self.add_label(inconsolata_14, scores_text, x_center, 200)
     self.add_label(inconsolata_12, anykey_text, x_center, 225)
-    
-    self.events.add_observer(self, KEYDOWN)
-    self.events.add_observer(self, QUIT)
-    self.full_redraw = True
-    
+
   def add_label(self, font, text, x_center, y_offset, color=(222, 222, 222)):
     sprite = TextLabel(font, text, x_center, y_offset, color)
     self.sprites.add(sprite)
-    
-  def get_rendering_area(self):
-    if self.full_redraw:
-      self.full_redraw = False
-      return self.app.screen.get_rect()
-    return self.sprites.draw(self.app.screen)
-    
-  def show_menu(self):
-    for tm in self.app.timers:
-      tm.active = False
-    self.app.timers = []
-  
-    self.app.scene = Menu(self.app)
 
   def react(self, app, event):
     if event.type == KEYDOWN:
@@ -804,61 +804,71 @@ class Scores(object):
       if alt_f4:
         app.close()
       else:
-        app.set_timer(200, self.show_menu)
-    elif event.type == K_QUIT:
+        app.set_timer(200, app.show_scene(Menu))
+    elif event.type == QUIT:
       app.close()
-
-  def update(self):
-    self.events.handle()
-    self.sprites.update()
-    return self.get_rendering_area()
   
 
-class Game(object):
-  def __init__(self, app):
-    self.sprites = pygame.sprite.LayeredDirty()
+class Game(Scene):
+  def __init__(self, app):    
+    super().__init__(app, pygame.sprite.LayeredDirty())
     self.channel = pygame.mixer.find_channel()
-    self.events = EventHandler(app)
     
-    self.full_redraw = True
     self.started = False
     self.starter = None
     self.grid = None
-    
     self.score = 0
     self.lives = 3
-    self.app = app
-    
-  def show_menu(self):
-    for tm in self.app.timers:
-      tm.active = False
-    self.app.timers = []
-    self.app.scene = Menu(self.app)
-
-  def show_scores(self):
-    for tm in self.app.timers:
-      tm.active = False
-    self.app.timers = []
-    self.app.scene = Scores(self.app)
 
   def react(self, app, event):
     if event.type == KEYDOWN:
       alt_f4 = event.key == K_F4 and bool(event.mod & KMOD_ALT)
       if alt_f4:
         app.close()
-        
       elif event.key == K_ESCAPE:
-        app.set_timer(200, self.show_menu)
-        
+        app.set_timer(200, app.show_scene(Menu))
     elif event.type == QUIT:
       app.close()
       
-  def get_rendering_area(self):
-    if self.full_redraw:
-      self.full_redraw = False
-      return self.app.screen.get_rect()
-    return self.sprites.draw(self.app.screen)
-    
+      
+  def on_collision(self, sprite):
+    if isinstance(sprite, Dot):
+      eating_sound = self.app.sounds['eating']
+      self.channel.queue(eating_sound)
+      self.score += 10
+      sprite.kill()
+      self.last_dot_check()
+
+    elif isinstance(sprite, Energizer):      
+      eating_bonus = self.app.sounds['eating_bonus']
+      self.channel.play(eating_bonus)
+      for ghost in self.ghosts:
+        ghost.frighten()
+      self.bonus = 200
+      self.score += 50
+      sprite.kill()
+      self.last_dot_check()
+      self.ghosts_check()
+        
+    elif isinstance(sprite, Ghost):
+      if sprite.is_vulnerable():
+        ts_name = str(min(self.bonus, 1600))
+        ts_score = TimedSprite(sprite.get_pos(), self.app, ts_name, 800)
+        self.sprites.add(ts_score)
+        
+        eating_ghosts = self.app.sounds['eating_ghosts']
+        self.channel.play(eating_ghosts)
+        self.score += self.bonus
+        sprite.send_to_home()
+        self.bonus *= 2
+
+      elif sprite.mode in ['scattering', 'chasing']:
+        death_sound = self.app.sounds['death']
+        self.channel.play(death_sound)
+        for ghost in self.ghosts:
+          ghost.reset()
+        self.pacman.kill()
+      
   def restart(self):
     self.starter = None
     self.started = True
@@ -870,7 +880,7 @@ class Game(object):
     from_layer = self.sprites.get_sprites_from_layer
     dots = from_layer(GameTypes.dots_layer)
     if len(dots) == 0:
-      self.app.set_timer(200, self.show_scores)
+      self.app.set_timer(200, self.app.show_scene(Scores))
     
   def end_game_check(self):
     if self.lives > 0:
@@ -879,7 +889,7 @@ class Game(object):
         ghost.set_pos(ghost.initial_pos)
       self.lives -= 1
     else:
-      self.app.set_timer(200, self.show_scores)
+      self.app.set_timer(200, self.app.show_scene(Scores))
       
   def ghosts_check(self):
     for ghost in self.ghosts:
@@ -890,81 +900,12 @@ class Game(object):
         break
   
   def update(self):
-    tilesize = self.app.tilesize
-    if self.starter:
+    if self.started:
+      return self.updates
+    elif self.starter:
       self.events.handle()
       return self.get_rendering_area()
   
-    elif self.started: 
-      x, y = self.pacman.get_pos()
-      pacman_vec = pygame.math.Vector2((x, y))
-      
-      speed = self.pacman.speed
-      direction = self.pacman.direction
-      self.pacman.shift = {
-        'up': (x, y - speed),
-        'down': (x, y + speed),
-        'left': (x - speed, y),
-        'right': (x + speed, y)
-      }
-      
-      for sprite in self.sprites.sprites():
-        sprite_pos = sprite.get_pos()
-        sprite_vec = pygame.math.Vector2(sprite_pos)
-        distance = pacman_vec.distance_to(sprite_vec)
-        collided = distance <= (tilesize / 2)
-            
-        if isinstance(sprite, (Door, Wall)):
-          sizes = [tilesize - speed] * 2
-          topleft = self.pacman.shift[direction]
-          rect = pygame.Rect(topleft, sizes)
-          if rect.colliderect(sprite.rect):
-            self.pacman.shift[direction] = (x, y)
-              
-        elif collided:
-          if isinstance(sprite, Dot):
-            eating_sound = self.app.sounds['eating']
-            self.channel.queue(eating_sound)
-            self.score += 10
-            sprite.kill()
-            self.last_dot_check()
-
-          elif isinstance(sprite, Energizer):      
-            self.app.set_timer(1, self.ghosts_check)
-            eating_bonus = self.app.sounds['eating_bonus']
-            self.channel.play(eating_bonus)
-            for ghost in self.ghosts:
-              ghost.frighten()
-            self.bonus = 200
-            self.score += 50
-            sprite.kill()
-            self.last_dot_check()
-              
-          elif isinstance(sprite, Ghost):
-            if sprite.is_vulnerable():
-              ts_name = str(min(self.bonus, 1600))
-              ts_score = TimedSprite(sprite_pos, self.app, ts_name, 800)
-              self.sprites.add(ts_score)
-              
-              eating_ghosts = self.app.sounds['eating_ghosts']
-              self.channel.play(eating_ghosts)
-              self.score += self.bonus
-              sprite.send_to_home()
-              self.bonus *= 2
-      
-            elif sprite.mode in ['scattering', 'chasing']:
-              death_sound = self.app.sounds['death']
-              self.channel.play(death_sound)
-              for ghost in self.ghosts:
-                ghost.reset()
-              self.pacman.kill()
-              
-          
-      self.events.handle()
-      self.sprites.update()
-      return self.get_rendering_area()
-    
-    
     plan = [
       'wwwwwwwwwwwwwwwwwww',
       'wedddddddwdddddddew',
@@ -986,6 +927,7 @@ class Game(object):
       'wedddddddddddddddew',
       'wwwwwwwwwwwwwwwwwww'
     ]
+    tilesize = self.app.tilesize
     self.grid = Grid(plan, tilesize)
 
     adjust = lambda r: r * tilesize
@@ -999,13 +941,10 @@ class Game(object):
     
     self.starter = self.app.set_timer(800, self.restart)
     
-    self.events.clear()
     from_layer = self.sprites.get_sprites_from_layer
     self.ghosts = from_layer(GameTypes.ghosts_layer)
     self.pacman = from_layer(GameTypes.pacman_layer)[0]
     self.events.add_observer(self.pacman, KEYDOWN)    
-    self.events.add_observer(self, KEYDOWN)
-    self.events.add_observer(self, QUIT)
     return self.get_rendering_area()
 
 
@@ -1019,10 +958,17 @@ class App(object):
     self.fonts = {}
 
     self.running = True
-    self.scene = None
-    self.game = None
     self.timers = []
-    self.player = ''
+    self.player = ''   
+    self.game = None
+
+  def show_scene(self, scene):
+    def show_scene_():
+      for tm in self.timers:
+        tm.active = False
+      self.timers = []
+      self.scene = scene(self)
+    return show_scene_
     
   def close(self):
     self.running = False
