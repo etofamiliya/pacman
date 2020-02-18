@@ -156,6 +156,7 @@ class Animation(object):
       return self.frame + 1 == len(self.frames)
     
   def rewind(self):
+    self.timer = None
     self.frame = 0
     
   def next_frame(self):
@@ -492,7 +493,7 @@ class Pacman(Sprite):
   def update(self):
     if self.dying:
       if self.animation.finished:
-        self.app.game.end_game_check()
+        self.app.game.restart()
       self.redraw()
       return     
     
@@ -661,7 +662,7 @@ class Scene(object):
     self.sprites = sprites
     self.full_redraw = True
     self.events = EventHandler(app)
-    self.events.add_observer(self, KEYDOWN, QUIT)
+    self.events.add_observer(self, KEYDOWN, KEYUP, QUIT)
   
   def get_rendering_area(self):
     if self.full_redraw:
@@ -685,32 +686,21 @@ class Menu(Scene):
     firenight = app.fonts['Firenight-Regular']
     firenight_60 = pygame.font.Font(firenight, 60)
     firenight_36 = pygame.font.Font(firenight, 36)
-    firenight_18 = pygame.font.Font(firenight, 18)
     
     inconsolata = app.fonts['Inconsolata']
+    inconsolata_18 = pygame.font.Font(inconsolata, 18)
     inconsolata_14 = pygame.font.Font(inconsolata, 14)
     inconsolata_12 = pygame.font.Font(inconsolata, 12)
     
     self.add_label(firenight_60, 'Pacman', x_center, 15, (255, 255, 0))
     self.add_label(firenight_36, 'Records', x_center, 150, (255, 0, 0))
     
-    records = { 'Miracle.-': 7050, 'Noone': 7100, 'Zayac': 6800 } 
-    
-    with open(app.texts['records']) as r:
-      content = r.read()
-      if len(content):
-        records = {}
-        lines = content.split('\n')
-        for line in lines:
-          name, score = line.split(':')
-          records[name] = score
-        
+    records = app.get_records()
     records = sorted(records.items(), key=lambda z: z[1], reverse=True)
-
-    for z, pair in enumerate(records[:4]):
-      name, scores = pair
-      record_txt = '{}) {}     {}'.format(z, name, scores)
-      self.add_label(firenight_18, record_txt, x_center, 200 + z * 20)
+    for z, (name, scores) in enumerate(records[:5]):
+      scores = str(scores).ljust(5)
+      record_txt = '{}) {}  {}'.format(z+1, name.ljust(12), scores)
+      self.add_label(inconsolata_18, record_txt, x_center, 200 + z * 20)
     
     invite_text = 'Type your name to start:'
     self.add_label(inconsolata_14, invite_text, x_center, 350)
@@ -718,7 +708,7 @@ class Menu(Scene):
     ibx = self.add_label(inconsolata_14, '____________', x_center, 390)
     self.input_box = ibx
     self.input_box.react = self.input_box_react
-    self.events.add_observer(ibx, KEYDOWN)
+    self.events.add_observer(ibx, KEYUP)
     
     arrows_text = "Use Arrow keys to control Pacman's movement."
     self.add_label(inconsolata_14, arrows_text, x_center, 510)
@@ -731,6 +721,7 @@ class Menu(Scene):
     
     self.channel = pygame.mixer.find_channel()
     self.music_playing = True
+    app.player = ''
     
   def react(self, app, event):
     if event.type == KEYDOWN:
@@ -748,22 +739,19 @@ class Menu(Scene):
     
   def input_box_react(self, app, event):
     if event.key == K_RETURN:
-      player = self.input_box.text.strip('_ ')
-      if len(player):
-        self.input_box.set_text('_' * 12)
+      if len(app.player):
         app.set_timer(200, self.show_game)
-        self.app.player = player
-        
     elif event.key == K_BACKSPACE:
-      text = self.input_box.text.strip('_ ')[:-1]
-      self.input_box.set_text(text.ljust(12, '_')[:12])
-      
+      app.player = app.player[:-1]
     else:
-      keyname = pygame.key.name(event.key)
-      if len(keyname) == 1:
-        text = self.input_box.text.strip('_ ') + keyname
-        self.input_box.set_text(text.ljust(12, '_')[:12])
-            
+      char = chr(event.key)
+      if char.isascii():
+        upper = event.mod & (KMOD_SHIFT | KMOD_CAPS)
+        app.player += char.upper() if upper else char
+        app.player = app.player[:12]
+
+    self.input_box.set_text(app.player.ljust(12, '_'))
+
   def add_label(self, font, text, x_center, y_offset, color=(222, 222, 222)):
     sprite = TextLabel(font, text, x_center, y_offset, color)
     self.sprites.add(sprite)
@@ -793,13 +781,14 @@ class Scores(Scene):
     
     self.add_label(inconsolata_14, scores_text, x_center, 200)
     self.add_label(inconsolata_12, anykey_text, x_center, 225)
+    app.records[app.player] = app.game.score
 
   def add_label(self, font, text, x_center, y_offset, color=(222, 222, 222)):
     sprite = TextLabel(font, text, x_center, y_offset, color)
     self.sprites.add(sprite)
 
   def react(self, app, event):
-    if event.type == KEYDOWN:
+    if event.type == KEYUP:
       alt_f4 = event.key == K_F4 and bool(event.mod & KMOD_ALT)
       if alt_f4:
         app.close()
@@ -868,13 +857,15 @@ class Game(Scene):
         for ghost in self.ghosts:
           ghost.reset()
         self.pacman.kill()
+        self.lives -= 1
       
-  def restart(self):
+  def start(self):
     self.starter = None
     self.started = True
     self.pacman.respawn()
     for ghost in self.ghosts:
       ghost.animate()
+
 
   def last_dot_check(self):
     from_layer = self.sprites.get_sprites_from_layer
@@ -882,12 +873,11 @@ class Game(Scene):
     if len(dots) == 0:
       self.app.set_timer(200, self.app.show_scene(Scores))
     
-  def end_game_check(self):
+  def restart(self):
     if self.lives > 0:
-      self.starter = self.app.set_timer(800, self.restart)
+      self.starter = self.app.set_timer(500, self.start)
       for ghost in self.ghosts:
         ghost.set_pos(ghost.initial_pos)
-      self.lives -= 1
     else:
       self.app.set_timer(200, self.app.show_scene(Scores))
       
@@ -939,7 +929,7 @@ class Game(Scene):
           sprite = GameTypes.create(gametype, pos, self.app)
           self.sprites.add(sprite, layer=GameTypes.layer(gametype))
     
-    self.starter = self.app.set_timer(800, self.restart)
+    self.starter = self.app.set_timer(800, self.start)
     
     from_layer = self.sprites.get_sprites_from_layer
     self.ghosts = from_layer(GameTypes.ghosts_layer)
@@ -958,6 +948,7 @@ class App(object):
     self.fonts = {}
 
     self.running = True
+    self.records = {}
     self.timers = []
     self.player = ''   
     self.game = None
@@ -970,7 +961,21 @@ class App(object):
       self.scene = scene(self)
     return show_scene_
     
+  def get_records(self):
+    if not self.records:
+      with open(self.texts['records']) as r:
+        lines = r.readlines()
+        if len(lines):
+          for line in lines:
+            name, score = line.split(':')
+            self.records[name] = max(int(score), self.records.get(name, 0))
+    return self.records
+
   def close(self):
+    if self.records:
+      with open(self.texts['records'], 'w') as r:
+        records = ['{}: {}'.format(*z) for z in self.records.items()]
+        r.write('\n'.join(records))
     self.running = False
         
   def set_timer(self, duration, action):
