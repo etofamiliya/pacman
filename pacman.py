@@ -254,7 +254,7 @@ class Ghost(Sprite):
     return self.initial_pos      
     
   def is_walkable(self, cell):
-    return cell.cell != 'wall'
+    return cell.cell not in ('wall', 'door')
     
   def is_vulnerable(self):
     return self.mode == 'frightened' and self.action != 'going-home'
@@ -405,8 +405,12 @@ class Ghost(Sprite):
           self.make_one_step(neighbors)
 
       elif self.mode == 'scattering':
-        self.make_one_step(neighbors)
-        
+        if self.is_at_home():
+          blinky = self.app.game.ghosts['blinky']
+          self.path = self.pathfind(blinky.initial_pos)  
+        else:
+          self.make_one_step(neighbors)
+
       elif self.mode == 'chasing':
         self.path = self.pathfind(self.game.pacman.get_pos())
     self.redraw()
@@ -417,9 +421,7 @@ class Blinky(Ghost):
     super().__init__(pos, app, 'blinky') 
     
   def get_home_pos(self):
-    for ghost in self.app.game.ghosts:
-      if ghost.name == 'pinky':
-        return ghost.initial_pos
+    return self.app.game.ghosts['pinky'].initial_pos
     
 class Clyde(Ghost):
   def __init__(self, pos, app):
@@ -831,7 +833,7 @@ class Game(Scene):
     elif isinstance(sprite, Energizer):      
       eating_bonus = self.app.sounds['eating_bonus']
       self.channel.play(eating_bonus)
-      for ghost in self.ghosts:
+      for ghost in self.ghosts.values():
         ghost.frighten()
       self.bonus = 200
       self.score += 50
@@ -854,7 +856,7 @@ class Game(Scene):
       elif sprite.mode in ['scattering', 'chasing']:
         death_sound = self.app.sounds['death']
         self.channel.play(death_sound)
-        for ghost in self.ghosts:
+        for ghost in self.ghosts.values():
           ghost.reset()
         self.pacman.kill()
         self.lives -= 1
@@ -863,7 +865,7 @@ class Game(Scene):
     self.starter = None
     self.started = True
     self.pacman.respawn()
-    for ghost in self.ghosts:
+    for ghost in self.ghosts.values():
       ghost.animate()
 
 
@@ -876,13 +878,13 @@ class Game(Scene):
   def restart(self):
     if self.lives > 0:
       self.starter = self.app.set_timer(500, self.start)
-      for ghost in self.ghosts:
+      for ghost in self.ghosts.values():
         ghost.set_pos(ghost.initial_pos)
     else:
       self.app.set_timer(200, self.app.show_scene(Scores))
       
   def ghosts_check(self):
-    for ghost in self.ghosts:
+    for ghost in self.ghosts.values():
       if ghost.is_vulnerable():
         ghosts_scared = self.app.sounds['ghosts_scared']
         self.app.set_timer(ghosts_scared.get_length(), self.ghosts_check)
@@ -932,7 +934,8 @@ class Game(Scene):
     self.starter = self.app.set_timer(800, self.start)
     
     from_layer = self.sprites.get_sprites_from_layer
-    self.ghosts = from_layer(GameTypes.ghosts_layer)
+    ghosts = from_layer(GameTypes.ghosts_layer)
+    self.ghosts = dict([(g.name, g) for g in ghosts])
     self.pacman = from_layer(GameTypes.pacman_layer)[0]
     self.events.add_observer(self.pacman, KEYDOWN)    
     return self.get_rendering_area()
