@@ -62,15 +62,21 @@ class Grid(object):
     
   def get_neighbors(self, cell):
     if cell.cell == 'tunnel':
-      if cell.col < 0:
+      row, col = cell.row, cell.col
+      impassable = lambda r, c: GridCell(self.tilesize, r, c, 'impassable', 999)
+      if col < 0:
         return {
-          'left': self.get(cell.row, 19),
-          'right': self.get(cell.row, 0)
+          'up': impassable(row-1, col),
+          'down': impassable(row+1, col),
+          'left': self.get(row, 19),
+          'right': self.get(row, 0)
         }
-      elif cell.col > self.cols:
+      elif col > self.cols:
         return {
-          'left': self.get(cell.row, 18),
-          'right': self.get(cell.row, -1)
+          'up': impassable(row-1, col),
+          'down': impassable(row+1, col),
+          'left': self.get(row, 18),
+          'right': self.get(row, -1)
         }
       return {}
   
@@ -254,7 +260,7 @@ class Ghost(Sprite):
     return self.initial_pos      
     
   def is_walkable(self, cell):
-    return cell.cell not in ('wall', 'door')
+    return cell.cell not in ('wall', 'door', 'impassable')
     
   def is_vulnerable(self):
     return self.mode == 'frightened' and self.action != 'going-home'
@@ -451,7 +457,7 @@ class Pacman(Sprite):
     self.app = app
         
   def is_walkable(self, cell):
-    return cell.cell not in ('wall', 'door')
+    return cell.cell not in ('wall', 'door', 'impassable')
   
   def can_move_to(self, pos, direction):
     cell = self.game.grid.get_by_pos(pos)
@@ -868,7 +874,6 @@ class Game(Scene):
     for ghost in self.ghosts.values():
       ghost.animate()
 
-
   def last_dot_check(self):
     from_layer = self.sprites.get_sprites_from_layer
     dots = from_layer(GameTypes.dots_layer)
@@ -1057,10 +1062,3 @@ if __name__ == '__main__':
   
   pygame.mixer.quit()
   pygame.quit()
-  
-  
-  
-  
-  
-  
-  
