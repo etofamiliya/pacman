@@ -147,8 +147,8 @@ class Timer(object):
         self.active = False
         self.action()
     return self
-    
-    
+
+
 class Animation(object):
   def __init__(self, frames, delay, repeat = True):
     self.frames = frames
@@ -176,6 +176,7 @@ class Animation(object):
     else:
       self.timer = Timer(self.delay, self.next_frame)
     return self.frames[self.frame]
+
 
 class Sprite(pygame.sprite.DirtySprite):
   def __init__(self, pos, image):
@@ -209,13 +210,15 @@ class Dot(Sprite):
     image = app.textures['dot']
     super().__init__(pos, image)
 
+
 class Wall(Sprite):
   def __init__(self, pos, app):
     sizes = [app.tilesize] * 2
     image = pygame.Surface(sizes)
     image.fill((0, 50, 80))
     super().__init__(pos, image)    
-    
+
+
 class Door(Sprite):
   def __init__(self, pos, app):
     tsize = app.tilesize
@@ -223,6 +226,7 @@ class Door(Sprite):
     door = pygame.Rect(0, tsize/4, tsize, tsize/2)
     image.fill((0, 50, 80), door)
     super().__init__(pos, image)
+
 
 class Energizer(Sprite):
   def __init__(self, pos, app):
@@ -333,7 +337,7 @@ class Ghost(Sprite):
       self.mode = 'chasing'
     else:
       self.mode = 'scattering'
-
+      
     self.add_timer(5000, self.switch_mode)
     self.change_action('walking')
     self.path = self.path[:1]
@@ -501,7 +505,7 @@ class Pacman(Sprite):
   def update(self):
     if self.dying:
       if self.animation.finished:
-        self.app.game.restart()
+        self.app.game.end_game_check()
       self.redraw()
       return     
     
@@ -678,8 +682,7 @@ class Scene(object):
       return self.app.screen.get_rect()
     return self.sprites.draw(self.app.screen)
 
-  @property
-  def updates(self):
+  def update(self):
     self.events.handle()
     self.sprites.update()
     return self.get_rendering_area()
@@ -688,6 +691,7 @@ class Scene(object):
 class Menu(Scene):
   def __init__(self, app):
     super().__init__(app, pygame.sprite.RenderUpdates())
+    app.player = ''
     
     x_center = app.screen.get_width() / 2
 
@@ -727,23 +731,19 @@ class Menu(Scene):
     footer_text = 'etofamiliya 2017-2020'
     self.add_label(inconsolata_12, footer_text, x_center, 590)
     
-    self.channel = pygame.mixer.find_channel()
-    self.music_playing = True
-    app.player = ''
-    
   def react(self, app, event):
     if event.type == KEYDOWN:
       alt_f4 = event.key == K_F4 and bool(event.mod & KMOD_ALT)
       escape = event.key == K_ESCAPE
       if escape or alt_f4:
         app.close()
-        
     elif event.type == QUIT:
       app.close()
       
   def show_game(self):
     self.app.show_scene(Game)()
     self.app.game = self.app.scene
+    self.app.game.load()
     
   def input_box_react(self, app, event):
     if event.key == K_RETURN:
@@ -765,19 +765,10 @@ class Menu(Scene):
     self.sprites.add(sprite)
     return sprite
     
-  def update(self):
-    if not self.music_playing:
-      pygame.mixer.music.load(self.music['main_theme'])
-      pygame.mixer.music.set_volume(0.4)
-      pygame.mixer.music.play()
-      self.music_playing = True
-    return self.updates
-    
 
 class Scores(Scene):
   def __init__(self, app):
     super().__init__(app, pygame.sprite.RenderUpdates())
-    self.update = lambda: self.updates
     
     x_center = app.screen.get_width() / 2
     inconsolata = app.fonts['Inconsolata']
@@ -809,13 +800,10 @@ class Scores(Scene):
 class Game(Scene):
   def __init__(self, app):    
     super().__init__(app, pygame.sprite.LayeredDirty())
-    self.channel = pygame.mixer.find_channel()
-    
-    self.started = False
+    self.channel = pygame.mixer.find_channel() 
     self.starter = None
-    self.grid = None
-    self.score = 0
     self.lives = 3
+    self.score = 0
 
   def react(self, app, event):
     if event.type == KEYDOWN:
@@ -826,7 +814,6 @@ class Game(Scene):
         app.set_timer(200, app.show_scene(Menu))
     elif event.type == QUIT:
       app.close()
-      
       
   def on_collision(self, sprite):
     if isinstance(sprite, Dot):
@@ -867,24 +854,17 @@ class Game(Scene):
         self.pacman.kill()
         self.lives -= 1
       
-  def start(self):
-    self.starter = None
-    self.started = True
-    self.pacman.respawn()
-    for ghost in self.ghosts.values():
-      ghost.animate()
-
   def last_dot_check(self):
     from_layer = self.sprites.get_sprites_from_layer
     dots = from_layer(GameTypes.dots_layer)
     if len(dots) == 0:
       self.app.set_timer(200, self.app.show_scene(Scores))
     
-  def restart(self):
+  def end_game_check(self):
     if self.lives > 0:
-      self.starter = self.app.set_timer(500, self.start)
       for ghost in self.ghosts.values():
         ghost.set_pos(ghost.initial_pos)
+      self.starter = self.app.set_timer(500, self.start)
     else:
       self.app.set_timer(200, self.app.show_scene(Scores))
       
@@ -895,14 +875,14 @@ class Game(Scene):
         self.app.set_timer(ghosts_scared.get_length(), self.ghosts_check)
         self.channel.queue(ghosts_scared)
         break
-  
-  def update(self):
-    if self.started:
-      return self.updates
-    elif self.starter:
-      self.events.handle()
-      return self.get_rendering_area()
-  
+
+  def start(self):
+    self.starter = None
+    self.pacman.respawn()
+    for ghost in self.ghosts.values():
+      ghost.animate()
+      
+  def load(self):
     plan = [
       'wwwwwwwwwwwwwwwwwww',
       'wedddddddwdddddddew',
@@ -935,16 +915,20 @@ class Game(Scene):
           pos = adjust(col), adjust(row)
           sprite = GameTypes.create(gametype, pos, self.app)
           self.sprites.add(sprite, layer=GameTypes.layer(gametype))
-    
-    self.starter = self.app.set_timer(800, self.start)
-    
+
     from_layer = self.sprites.get_sprites_from_layer
     ghosts = from_layer(GameTypes.ghosts_layer)
     self.ghosts = dict([(g.name, g) for g in ghosts])
     self.pacman = from_layer(GameTypes.pacman_layer)[0]
-    self.events.add_observer(self.pacman, KEYDOWN)    
-    return self.get_rendering_area()
+    self.events.add_observer(self.pacman, KEYDOWN) 
+    self.starter = self.app.set_timer(800, self.start)  
 
+  def update(self):
+    if self.starter:
+      self.events.handle()
+      return self.get_rendering_area()
+    return super().update()
+    
 
 class App(object):
   def __init__(self):
@@ -965,7 +949,6 @@ class App(object):
     def show_scene_():
       for tm in self.timers:
         tm.active = False
-      self.timers = []
       self.scene = scene(self)
     return show_scene_
     
@@ -990,6 +973,12 @@ class App(object):
     timer = Timer(duration, action)
     self.timers.append(timer)
     return timer
+    
+  def music_update(self):
+    if pygame.mixer.music.get_busy():
+      if pygame.mixer.music.get_pos() > 224250:
+        pygame.mixer.music.stop()
+        pygame.mixer.music.play(1, 59.8)
 
   def launch(self):    
     tilesize = 32
@@ -1039,16 +1028,20 @@ class App(object):
           
         elif extension == 'txt':
           self.texts[filename] = fullpath
-    
-    self.scene = Menu(self)
+
+    pygame.mixer.music.load(self.music['main_theme'])
+    pygame.mixer.music.set_volume(0.3)
+    pygame.mixer.music.play(-1)
     clock = pygame.time.Clock()
+    self.scene = Menu(self)
+    
     while self.running:  
+      self.music_update()
       self.screen.fill((0, 0, 0))
       changes = self.scene.update()
-      pygame.display.update(changes)   
+      pygame.display.update(changes)
       self.timers = [tm.update() for tm in self.timers if tm.active]
       clock.tick(40)
-
 
 if __name__ == '__main__':
   pygame.init()
