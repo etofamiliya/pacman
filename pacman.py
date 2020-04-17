@@ -9,7 +9,7 @@ with contextlib.redirect_stdout(None):
   import pygame.gfxdraw
 
 from pygame.locals import *
-from random import shuffle
+from random import shuffle, randint
 
 
 class GridCell(object):
@@ -97,7 +97,6 @@ class Grid(object):
     goal = self.get_by_pos(goal_pos)
     
     manhattan = lambda s, g: abs(s.row - g.row) + abs(s.col - g.col)
-
     start.h = manhattan(start, goal)
     start.f = start.h
 
@@ -159,7 +158,7 @@ class Animation(object):
 
   @property
   def finished(self):
-      return self.frame + 1 == len(self.frames)
+    return self.frame + 1 == len(self.frames)
     
   def rewind(self):
     self.timer = None
@@ -203,6 +202,11 @@ class TimedSprite(Sprite):
     self.timer = Timer(duration, self.kill)
     self.update = self.timer.update
     self.dirty = 2
+
+
+class Fruit(TimedSprite):
+  def __init__(self, pos, app, name, duration):
+    super().__init__(pos, app, name, duration)
 
 
 class Dot(Sprite):
@@ -576,8 +580,9 @@ class Tileset(object):
 
 
 class GameTypes(object):
-  pacman_layer = 5
-  ghosts_layer = 4
+  pacman_layer = 6
+  ghosts_layer = 5
+  timed_layer  = 4
   walls_layer  = 3
   dots_layer   = 2
   door_layer   = 1
@@ -695,11 +700,11 @@ class Menu(Scene):
     
     x_center = app.screen.get_width() / 2
 
-    firenight = app.fonts['Firenight-Regular']
+    firenight = app.media('Firenight-Regular', 'otf')
     firenight_60 = pygame.font.Font(firenight, 60)
     firenight_36 = pygame.font.Font(firenight, 36)
     
-    inconsolata = app.fonts['Inconsolata']
+    inconsolata = app.media('Inconsolata', 'otf')
     inconsolata_18 = pygame.font.Font(inconsolata, 18)
     inconsolata_14 = pygame.font.Font(inconsolata, 14)
     inconsolata_12 = pygame.font.Font(inconsolata, 12)
@@ -707,8 +712,7 @@ class Menu(Scene):
     self.add_label(firenight_60, 'Pacman', x_center, 15, (255, 255, 0))
     self.add_label(firenight_36, 'Records', x_center, 150, (255, 0, 0))
     
-    records = app.get_records()
-    records = sorted(records.items(), key=lambda z: z[1], reverse=True)
+    records = sorted(app.records.items(), key=lambda z: z[1], reverse=True)
     for z, (name, scores) in enumerate(records[:5]):
       scores = str(scores).ljust(5)
       record_txt = '{}) {}  {}'.format(z+1, name.ljust(12), scores)
@@ -771,7 +775,7 @@ class Scores(Scene):
     super().__init__(app, pygame.sprite.RenderUpdates())
     
     x_center = app.screen.get_width() / 2
-    inconsolata = app.fonts['Inconsolata']
+    inconsolata = app.media('Inconsolata', 'otf')
     inconsolata_14 = pygame.font.Font(inconsolata, 14)
     inconsolata_12 = pygame.font.Font(inconsolata, 12)
 
@@ -795,11 +799,12 @@ class Scores(Scene):
         app.set_timer(200, app.show_scene(Menu))
     elif event.type == QUIT:
       app.close()
-  
+
 
 class Game(Scene):
   def __init__(self, app):    
     super().__init__(app, pygame.sprite.LayeredDirty())
+    self.from_layer = self.sprites.get_sprites_from_layer
     self.channel = pygame.mixer.find_channel() 
     self.starter = None
     self.lives = 3
@@ -817,46 +822,60 @@ class Game(Scene):
       
   def on_collision(self, sprite):
     if isinstance(sprite, Dot):
-      eating_sound = self.app.sounds['eating']
+      eating_sound = self.app.media('eating', 'wav')
       self.channel.queue(eating_sound)
       self.score += 10
       sprite.kill()
+      self.bonus_spawn_check()
       self.last_dot_check()
 
     elif isinstance(sprite, Energizer):      
-      eating_bonus = self.app.sounds['eating_bonus']
+      eating_bonus = self.app.media('eating_bonus', 'wav')
       self.channel.play(eating_bonus)
       for ghost in self.ghosts.values():
         ghost.frighten()
       self.bonus = 200
       self.score += 50
       sprite.kill()
+      self.bonus_spawn_check()
       self.last_dot_check()
       self.ghosts_check()
+
+    elif isinstance(sprite, Fruit):
+      eating_bonus = self.app.media('eating_bonus', 'wav')
+      self.channel.play(eating_bonus)
+      self.score += 500
+      sprite.kill()
         
     elif isinstance(sprite, Ghost):
       if sprite.is_vulnerable():
         ts_name = str(min(self.bonus, 1600))
         ts_score = TimedSprite(sprite.get_pos(), self.app, ts_name, 800)
-        self.sprites.add(ts_score)
-        
-        eating_ghosts = self.app.sounds['eating_ghosts']
+        self.sprites.add(ts_score, layer=GameTypes.timed_layer)
+
+        eating_ghosts = self.app.media('eating_ghosts', 'wav')
         self.channel.play(eating_ghosts)
         self.score += self.bonus
         sprite.send_to_home()
         self.bonus *= 2
 
       elif sprite.mode in ['scattering', 'chasing']:
-        death_sound = self.app.sounds['death']
+        death_sound = self.app.media('death', 'wav')
         self.channel.play(death_sound)
         for ghost in self.ghosts.values():
           ghost.reset()
         self.pacman.kill()
         self.lives -= 1
+
+  def bonus_spawn_check(self):
+    dots = len(self.from_layer(GameTypes.dots_layer))
+    if dots in [60, 120]:
+        bonus_name = 'bonus' + str(randint(1, 5))
+        bonus = Fruit(self.pacman.initial_pos, self.app, bonus_name, 8000)
+        self.sprites.add(bonus, layer=GameTypes.timed_layer)
       
   def last_dot_check(self):
-    from_layer = self.sprites.get_sprites_from_layer
-    dots = from_layer(GameTypes.dots_layer)
+    dots = self.from_layer(GameTypes.dots_layer)
     if len(dots) == 0:
       self.app.set_timer(200, self.app.show_scene(Scores))
     
@@ -864,6 +883,8 @@ class Game(Scene):
     if self.lives > 0:
       for ghost in self.ghosts.values():
         ghost.set_pos(ghost.initial_pos)
+      for tm in self.from_layer(GameTypes.timed_layer):
+        tm.kill()
       self.starter = self.app.set_timer(500, self.start)
     else:
       self.app.set_timer(200, self.app.show_scene(Scores))
@@ -871,7 +892,7 @@ class Game(Scene):
   def ghosts_check(self):
     for ghost in self.ghosts.values():
       if ghost.is_vulnerable():
-        ghosts_scared = self.app.sounds['ghosts_scared']
+        ghosts_scared = self.app.media('ghosts_scared', 'wav')
         self.app.set_timer(ghosts_scared.get_length(), self.ghosts_check)
         self.channel.queue(ghosts_scared)
         break
@@ -904,10 +925,10 @@ class Game(Scene):
       'wedddddddddddddddew',
       'wwwwwwwwwwwwwwwwwww'
     ]
+    adjust = self.app.adjust
     tilesize = self.app.tilesize
     self.grid = Grid(plan, tilesize)
 
-    adjust = lambda r: r * tilesize
     for row, line in enumerate(plan):
       for col, typ in enumerate(line):
         gametype = GameTypes.fullname(typ)
@@ -916,11 +937,10 @@ class Game(Scene):
           sprite = GameTypes.create(gametype, pos, self.app)
           self.sprites.add(sprite, layer=GameTypes.layer(gametype))
 
-    from_layer = self.sprites.get_sprites_from_layer
-    ghosts = from_layer(GameTypes.ghosts_layer)
+    ghosts = self.from_layer(GameTypes.ghosts_layer)
     self.ghosts = dict([(g.name, g) for g in ghosts])
-    self.pacman = from_layer(GameTypes.pacman_layer)[0]
-    self.events.add_observer(self.pacman, KEYDOWN) 
+    self.pacman = self.from_layer(GameTypes.pacman_layer)[0]
+    self.events.add_observer(self.pacman, KEYDOWN)
     self.starter = self.app.set_timer(800, self.start)  
 
   def update(self):
@@ -928,17 +948,16 @@ class Game(Scene):
       self.events.handle()
       return self.get_rendering_area()
     return super().update()
-    
+
 
 class App(object):
   def __init__(self):
     self.animations = {}
     self.textures = {}
-    self.sounds = {}
-    self.music = {}
-    self.texts = {}
-    self.fonts = {}
+    self.files = {}
 
+    self.tilesize = 32
+    self.adjust = lambda r: r * self.tilesize
     self.running = True
     self.records = {}
     self.timers = []
@@ -952,19 +971,9 @@ class App(object):
       self.scene = scene(self)
     return show_scene_
     
-  def get_records(self):
-    if not self.records:
-      with open(self.texts['records']) as r:
-        lines = r.readlines()
-        if len(lines):
-          for line in lines:
-            name, score = line.split(':')
-            self.records[name] = max(int(score), self.records.get(name, 0))
-    return self.records
-
   def close(self):
     if self.records:
-      with open(self.texts['records'], 'w') as r:
+      with open(self.media('records', 'txt'), 'w') as r:
         records = ['{}: {}'.format(*z) for z in self.records.items()]
         r.write('\n'.join(records))
     self.running = False
@@ -980,56 +989,67 @@ class App(object):
         pygame.mixer.music.stop()
         pygame.mixer.music.play(1, 59.8)
 
-  def launch(self):    
-    tilesize = 32
-    self.tilesize = tilesize
-    adjust = lambda r: r * tilesize
+  def media(self, filename, extension):
+    return self.files[extension][filename]
     
+  def launch(self):
+    adjust = self.adjust
     self.screen = pygame.display.set_mode((608, 608))
-    
-    media_dir = os.path.join(os.getcwd(), 'media')
-    characters_json = os.path.join(media_dir, 'characters.json')
-    with open(characters_json) as characters:
-      jsondata = json.load(characters)
-      tileset = Tileset(jsondata['filepath'], tilesize)
-      
-      for key in jsondata['animations']:
-        animation = jsondata['animations'][key]
-        row = adjust(animation['row'])
-        cols = [adjust(col) for col in animation['cols']]
-        frames = [tileset.crop(col, row) for col in cols]
-        angle = animation.get('angle', 0)
-        if angle:
-          frames = [pygame.transform.rotate(f, angle) for f in frames]
-          
-        delay = animation['delay']
-        repeat = animation.get('repeat', True)
-        self.animations[key] = Animation(frames, delay, repeat)
-      
-      for key in jsondata['textures']:
-        row, col = jsondata['textures'][key]
-        row, col = adjust(row), adjust(col)
-        self.textures[key] = tileset.crop(col, row)
 
-    for path, _, names in os.walk(media_dir):
+    def characters_json_handler(fullpath):
+      with open(fullpath) as characters:
+        jsondata = json.load(characters)
+        tileset = Tileset(jsondata['filepath'], self.tilesize)
+
+        for key in jsondata['animations']:
+          animation = jsondata['animations'][key]
+          row = adjust(animation['row'])
+          cols = [adjust(col) for col in animation['cols']]
+          frames = [tileset.crop(col, row) for col in cols]
+          angle = animation.get('angle', 0)
+          if angle:
+            frames = [pygame.transform.rotate(f, angle) for f in frames]
+
+          delay = animation['delay']
+          repeat = animation.get('repeat', True)
+          self.animations[key] = Animation(frames, delay, repeat)
+
+        for key in jsondata['textures']:
+          row, col = jsondata['textures'][key]
+          row, col = adjust(row), adjust(col)
+          self.textures[key] = tileset.crop(col, row)
+      return fullpath
+
+    def records_txt_handler(fullpath):
+      with open(fullpath) as r:
+        lines = r.readlines()
+        if len(lines):
+          for line in lines:
+            name, score = line.split(':')
+            self.records[name] = max(int(score), self.records.get(name, 0))
+      return fullpath
+
+    handlers = {
+      'records.txt': records_txt_handler,
+      'wav': lambda w: pygame.mixer.Sound(w),
+      'characters.json': characters_json_handler
+    }
+
+    default_h = lambda fullpath: fullpath
+    for path, _, names in os.walk(os.path.join(os.getcwd(), 'media')):
       for name in names:
         fullpath = os.path.join(path, name)
         filename, extension = name.split('.')
-        if extension == 'wav':
-          sound = pygame.mixer.Sound(fullpath)
-          self.sounds[filename] = sound
-          sound.set_volume(0.6)
 
-        elif extension == 'mp3':
-          self.music[filename] = fullpath
-          
-        elif extension == 'otf':
-          self.fonts[filename] = fullpath
-          
-        elif extension == 'txt':
-          self.texts[filename] = fullpath
+        fullname_h = handlers.get(name)
+        extension_h = handlers.get(extension)
+        handler = fullname_h or extension_h or default_h
 
-    pygame.mixer.music.load(self.music['main_theme'])
+        container = self.files.get(extension, {})
+        container[filename] = handler(fullpath)
+        self.files[extension] = container
+
+    pygame.mixer.music.load(self.media('main_theme', 'mp3'))
     pygame.mixer.music.set_volume(0.3)
     pygame.mixer.music.play(-1)
     clock = pygame.time.Clock()
@@ -1042,6 +1062,7 @@ class App(object):
       pygame.display.update(changes)
       self.timers = [tm.update() for tm in self.timers if tm.active]
       clock.tick(40)
+
 
 if __name__ == '__main__':
   pygame.init()
