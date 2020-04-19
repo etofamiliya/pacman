@@ -467,8 +467,7 @@ class Pacman(Sprite):
   def is_walkable(self, cell):
     return cell.cell not in ('wall', 'door', 'impassable')
   
-  def can_move_to(self, pos, direction):
-    cell = self.game.grid.get_by_pos(pos)
+  def can_move_to(self, cell, direction):
     neighbors = self.game.grid.get_neighbors(cell)      
     return self.is_walkable(neighbors[direction])
   
@@ -514,11 +513,12 @@ class Pacman(Sprite):
       return     
     
     x, y = self.get_pos()
+    cell = self.game.grid.get_by_pos((x, y))
     tilesize = self.app.tilesize
     if self.new_direction:
       multiple_of = lambda v: (v % tilesize) <= self.speed
       can_turn_to = multiple_of(x) and multiple_of(y) 
-      can_move_to = self.can_move_to((x, y), self.new_direction)
+      can_move_to = self.can_move_to(cell, self.new_direction)
 
       if can_turn_to and can_move_to:
         self.direction = self.new_direction
@@ -549,16 +549,12 @@ class Pacman(Sprite):
       elif collided:
         self.game.on_collision(sprite)
         
-    if self.speed:      
-      x, y = shift[self.direction]
-      
-      #walking through tunnel
-      maxx, maxy = self.app.screen.get_size()
-      if x >= maxx and self.direction == 'right':
-        x = -tilesize
-      elif x <= (-tilesize) and self.direction == 'left':
-        x = maxx
-      
+    if self.speed:
+      if cell.cell == 'tunnel':
+        tunnel_exit = self.game.grid.get_neighbors(cell)[self.direction]
+        x, y = tunnel_exit.get_pos()
+      else:
+        x, y = shift[self.direction]
       self.set_pos((x, y))
     self.redraw()
       
