@@ -1,4 +1,4 @@
-# etofamiliya, 2017-
+# etofamiliya, 2017-2024
 
 import json
 import os, os.path
@@ -115,7 +115,7 @@ class Grid(object):
         return path
         
       neighbors = self.get_neighbors(cell)
-      for neighbor in neighbors.values():
+      for neighbor in list(neighbors.values()):
         if neighbor not in closed:
           newg = cell.g + neighbor.cost
           
@@ -708,7 +708,7 @@ class Menu(Scene):
     self.add_label(firenight_60, 'Pacman', x_center, 15, (255, 255, 0))
     self.add_label(firenight_36, 'Records', x_center, 150, (255, 0, 0))
     
-    records = sorted(app.records.items(), key=lambda z: z[1], reverse=True)
+    records = sorted(list(app.records.items()), key=lambda z: z[1], reverse=True)
     for z, (name, scores) in enumerate(records[:5]):
       scores = str(scores).ljust(5)
       record_txt = '{}) {}  {}'.format(z+1, name.ljust(12), scores)
@@ -728,7 +728,7 @@ class Menu(Scene):
     exit_text = 'Press Alt + F4 or Esc to Exit.'
     self.add_label(inconsolata_14, exit_text, x_center, 540)
     
-    footer_text = 'etofamiliya 2017-2020'
+    footer_text = 'etofamiliya 2017-2024'
     self.add_label(inconsolata_12, footer_text, x_center, 590)
     
   def react(self, app, event):
@@ -828,7 +828,7 @@ class Game(Scene):
     elif isinstance(sprite, Energizer):      
       eating_bonus = self.app.media('eating_bonus', 'wav')
       self.channel.play(eating_bonus)
-      for ghost in self.ghosts.values():
+      for ghost in list(self.ghosts.values()):
         ghost.frighten()
       self.bonus = 200
       self.score += 50
@@ -858,7 +858,7 @@ class Game(Scene):
       elif sprite.mode in ['scattering', 'chasing']:
         death_sound = self.app.media('death', 'wav')
         self.channel.play(death_sound)
-        for ghost in self.ghosts.values():
+        for ghost in list(self.ghosts.values()):
           ghost.reset()
         self.pacman.kill()
         self.lives -= 1
@@ -877,7 +877,7 @@ class Game(Scene):
     
   def end_game_check(self):
     if self.lives > 0:
-      for ghost in self.ghosts.values():
+      for ghost in list(self.ghosts.values()):
         ghost.set_pos(ghost.initial_pos)
       for tm in self.from_layer(GameTypes.timed_layer):
         tm.kill()
@@ -886,7 +886,7 @@ class Game(Scene):
       self.app.set_timer(200, self.app.show_scene(Scores))
       
   def ghosts_check(self):
-    for ghost in self.ghosts.values():
+    for ghost in list(self.ghosts.values()):
       if ghost.is_vulnerable():
         ghosts_scared = self.app.media('ghosts_scared', 'wav')
         self.app.set_timer(ghosts_scared.get_length(), self.ghosts_check)
@@ -896,7 +896,7 @@ class Game(Scene):
   def start(self):
     self.starter = None
     self.pacman.respawn()
-    for ghost in self.ghosts.values():
+    for ghost in list(self.ghosts.values()):
       ghost.animate()
       
   def load(self):
@@ -970,7 +970,7 @@ class App(object):
   def close(self):
     if self.records:
       with open(self.media('records', 'txt'), 'w') as r:
-        records = ['{}: {}'.format(*z) for z in self.records.items()]
+        records = ['{}: {}'.format(*z) for z in list(self.records.items())]
         r.write('\n'.join(records))
     self.running = False
         
