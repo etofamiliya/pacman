@@ -12,7 +12,7 @@ from pygame.locals import *
 from random import shuffle, randint
 
 
-class GridCell(object):
+class GridCell:
   def __init__(self, tilesize, row, col, cell, cost):
     self.tilesize = tilesize
     self.cell = cell
@@ -34,7 +34,7 @@ class GridCell(object):
     self.f = 0
 
 
-class Grid(object):
+class Grid:
   def __init__(self, grid, tilesize):
     rows = len(grid)
     cols = len(grid[0])
@@ -132,7 +132,7 @@ class Grid(object):
     return []
 
 
-class Timer(object):
+class Timer:
   def __init__(self, duration, action):
     self.start = pygame.time.get_ticks()
     self.duration = duration
@@ -148,7 +148,7 @@ class Timer(object):
     return self
 
 
-class Animation(object):
+class Animation:
   def __init__(self, frames, delay, repeat = True):
     self.frames = frames
     self.repeat = repeat
@@ -559,7 +559,7 @@ class Pacman(Sprite):
     self.redraw()
       
 
-class Tileset(object):
+class Tileset:
   def __init__(self, path, tilesize):
     self.image = pygame.image.load(path)
     if self.image.get_alpha():
@@ -575,7 +575,7 @@ class Tileset(object):
     return result
 
 
-class GameTypes(object):
+class GameTypes:
   pacman_layer = 6
   ghosts_layer = 5
   timed_layer  = 4
@@ -650,7 +650,7 @@ class TextLabel(Sprite):
     self.text = text
 
 
-class EventHandler(object):
+class EventHandler:
   def __init__(self, app):
     self.observers = {}
     self.clear = self.observers.clear
@@ -669,7 +669,7 @@ class EventHandler(object):
         obs.react(self.app, event)
 
 
-class Scene(object):
+class Scene:
   def __init__(self, app, sprites):
     self.app = app
     self.sprites = sprites
@@ -946,7 +946,7 @@ class Game(Scene):
     return super().update()
 
 
-class App(object):
+class App:
   def __init__(self):
     self.animations = {}
     self.textures = {}
