@@ -10,6 +10,7 @@ with contextlib.redirect_stdout(None):
 
 from pygame.locals import *
 from random import shuffle, randint
+from directions import *
 
 
 class GridCell:
@@ -59,33 +60,33 @@ class Grid:
     if row < 0 or row > self.rows or col < 0 or col > self.cols:
       return GridCell(self.tilesize, row, col, 'tunnel', 0)
     return self.grid[row][col]
-    
+
   def get_neighbors(self, cell):
     if cell.cell == 'tunnel':
       row, col = cell.row, cell.col
       impassable = lambda r, c: GridCell(self.tilesize, r, c, 'impassable', 999)
       if col < 0:
         return {
-          'up': impassable(row-1, col),
-          'down': impassable(row+1, col),
-          'left': self.get(row, 19),
-          'right': self.get(row, 0)
+          UP: impassable(row-1, col),
+          DOWN: impassable(row+1, col),
+          LEFT: self.get(row, 19),
+          RIGHT: self.get(row, 0)
         }
       elif col > self.cols:
         return {
-          'up': impassable(row-1, col),
-          'down': impassable(row+1, col),
-          'left': self.get(row, 18),
-          'right': self.get(row, -1)
+          UP: impassable(row-1, col),
+          DOWN: impassable(row+1, col),
+          LEFT: self.get(row, 18),
+          RIGHT: self.get(row, -1)
         }
       return {}
   
     row, col = cell.row, cell.col
     neighbors = {
-      'up': self.get(row - 1, col),
-      'down': self.get(row + 1, col),
-      'left': self.get(row, col - 1),
-      'right': self.get(row, col + 1)
+      UP: self.get(row - 1, col),
+      DOWN: self.get(row + 1, col),
+      LEFT: self.get(row, col - 1),
+      RIGHT: self.get(row, col + 1)
     }    
     return neighbors
 
@@ -249,7 +250,7 @@ class Ghost(Sprite):
     image = app.textures[name]
     super().__init__(pos, image)
     self.new_direction = True
-    self.direction = 'right'
+    self.direction = RIGHT
     self.animation = None
     self.game = app.game
     self.name = name
@@ -296,18 +297,11 @@ class Ghost(Sprite):
     return self.game.grid.pathfind(self.get_pos(), goal_pos)
     
   def make_one_step(self, neighbors):
-    opposite = {
-      'up': 'down',
-      'down': 'up',
-      'left': 'right',
-      'right': 'left'
-    }
-    
     directions = list(neighbors.keys())
     shuffle(directions)
     
     for new_direction in directions:
-      if new_direction == opposite[self.direction]:
+      if new_direction == opposite_direction[self.direction]:
         continue
       
       neighbor = neighbors.get(new_direction)
@@ -456,7 +450,7 @@ class Pacman(Sprite):
     super().__init__(pos, image)
     self.sprites = app.game.sprites.sprites
     self.new_direction = None
-    self.direction = 'right'
+    self.direction = RIGHT
     self.animation = None
     self.game = app.game
     self.dying = False
@@ -496,13 +490,7 @@ class Pacman(Sprite):
   def react(self, app, event):
     if event.type == KEYDOWN:
       if event.key in [K_UP, K_DOWN, K_LEFT, K_RIGHT]:
-        converter = {
-          K_UP: 'up',
-          K_DOWN: 'down',
-          K_LEFT: 'left',
-          K_RIGHT: 'right'
-        }
-        self.new_direction = converter[event.key]
+        self.new_direction = key_to_direction[event.key]
         self.speed = 3
     
   def update(self):
@@ -526,10 +514,10 @@ class Pacman(Sprite):
         self.change_animation()
         
     shift = {
-      'up': (x, y - self.speed),
-      'down': (x, y + self.speed),
-      'left': (x - self.speed, y),
-      'right': (x + self.speed, y)
+      UP: (x, y - self.speed),
+      DOWN: (x, y + self.speed),
+      LEFT: (x - self.speed, y),
+      RIGHT: (x + self.speed, y)
     }
     
     pacman_vec = pygame.math.Vector2((x, y))
