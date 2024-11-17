@@ -1,6 +1,7 @@
 # etofamiliya, 2017-2024
 
 import json
+import pickle
 import os, os.path
 import contextlib
 with contextlib.redirect_stdout(None):
@@ -940,6 +941,8 @@ class App:
     self.textures = {}
     self.files = {}
 
+    self.assets = {}
+
     self.tilesize = 32
     self.adjust = lambda r: r * self.tilesize
     self.running = True
@@ -957,9 +960,8 @@ class App:
     
   def close(self):
     if self.records:
-      with open(self.media('records', 'txt'), 'w') as r:
-        records = ['{}: {}'.format(*z) for z in list(self.records.items())]
-        r.write('\n'.join(records))
+    	with open('records', 'wb') as r:
+    		pickle.dump(self.records, r)
     self.running = False
         
   def set_timer(self, duration, action):
@@ -979,6 +981,12 @@ class App:
   def launch(self):
     adjust = self.adjust
     self.screen = pygame.display.set_mode((608, 608))
+
+    try:
+      with open('records', 'rb') as r:
+        self.records = pickle.load(r)
+    except Exception as e:
+      self.records = {}
 
     def characters_json_handler(fullpath):
       with open(fullpath) as characters:
@@ -1004,17 +1012,9 @@ class App:
           self.textures[key] = tileset.crop(col, row)
       return fullpath
 
-    def records_txt_handler(fullpath):
-      with open(fullpath) as r:
-        lines = r.readlines()
-        if len(lines):
-          for line in lines:
-            name, score = line.split(':')
-            self.records[name] = max(int(score), self.records.get(name, 0))
-      return fullpath
+
 
     handlers = {
-      'records.txt': records_txt_handler,
       'wav': lambda w: pygame.mixer.Sound(w),
       'characters.json': characters_json_handler
     }
