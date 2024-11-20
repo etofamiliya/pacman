@@ -4,6 +4,8 @@ import json
 import pickle
 import os, os.path
 import contextlib
+from typing import Tuple
+
 with contextlib.redirect_stdout(None):
   import pygame
   import pygame.math
@@ -12,6 +14,7 @@ with contextlib.redirect_stdout(None):
 from pygame.locals import *
 from random import shuffle, randint
 from directions import *
+
 
 
 class GridCell:
@@ -150,6 +153,20 @@ class Timer:
     return self
 
 
+class PickledImage:
+  def __init__(self, image):
+    self.image = image
+
+  def __getstate__(self):
+    state = self.__dict__.copy()
+    self.image = (pygame.image.tobytes(self.image, 'RGBA'), self.image.get_size())
+    return state
+
+  def __setstate__(self, state):
+    self.__dict__.update(state)
+    self.image = pygame.image.frombytes(*self.image)
+
+
 class Animation:
   def __init__(self, frames, delay, repeat = True):
     self.frames = frames
@@ -157,6 +174,15 @@ class Animation:
     self.delay = delay
     self.timer = None
     self.frame = 0
+
+  def __getstate__(self):
+    state = self.__dict__.copy()
+    state['frames'] = [PickledImage(s) for s in self.frames]
+    return state
+
+  def __setstate__(self, state):
+    self.__dict__.update(state)
+    state['frames'] = [frame.image for frame in state['frames']]
 
   @property
   def finished(self):
@@ -960,8 +986,8 @@ class App:
     
   def close(self):
     if self.records:
-    	with open('records', 'wb') as r:
-    		pickle.dump(self.records, r)
+      with open('records', 'wb') as r:
+        pickle.dump(self.records, r)
     self.running = False
         
   def set_timer(self, duration, action):
@@ -1032,6 +1058,8 @@ class App:
         container = self.files.get(extension, {})
         container[filename] = handler(fullpath)
         self.files[extension] = container
+
+
 
     pygame.mixer.music.load(self.media('main_theme', 'mp3'))
     pygame.mixer.music.set_volume(0.3)
