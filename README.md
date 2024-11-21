@@ -1,8 +1,8 @@
 ## Pacman
 
 
-[![python version](https://img.shields.io/badge/python-3.8.1-blue)](https://www.python.org)
-[![pygame version](https://img.shields.io/badge/pygame-1.9.6-yellow)](http://pygame.org)
+[![python version](https://img.shields.io/badge/python-3.9.7-blue)](https://www.python.org)
+[![pygame version](https://img.shields.io/badge/pygame-2.6.0-yellow)](http://pygame.org)
 
 
 ### Screenshots
