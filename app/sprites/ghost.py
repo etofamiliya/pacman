@@ -175,7 +175,7 @@ class Ghost(Sprite):
           self.path = self.pathfind(blinky.initial_pos)
         else:
           self.make_one_step(neighbors)
-
+            
       elif self.mode == 'chasing':
         self.path = self.pathfind(self.game.pacman.get_pos())
     self.redraw()
