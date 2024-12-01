@@ -17,7 +17,7 @@ class Animation:
 
   def __setstate__(self, state):
     self.__dict__.update(state)
-    state['frames'] = [frame.image for frame in state['frames']]
+    self.frames = [f.image for f in self.frames]
 
   @property
   def finished(self):

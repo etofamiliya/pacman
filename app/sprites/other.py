@@ -11,7 +11,7 @@ class Fruit(TimedSprite):
 
 class Dot(Sprite):
   def __init__(self, pos, app):
-    image = app.textures['dot']
+    image = app.get_image('dot')
     super().__init__(pos, image)
 
 
@@ -34,7 +34,7 @@ class Door(Sprite):
 
 class Energizer(Sprite):
   def __init__(self, pos, app):
-    image = app.textures['energizer']
+    image = app.get_image('energizer')
     super().__init__(pos, image)
     self.app = app
     self.blink()

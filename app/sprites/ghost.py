@@ -7,7 +7,7 @@ from app.sprites.sprite import Sprite
 
 class Ghost(Sprite):
   def __init__(self, pos, app, name):
-    image = app.textures[name]
+    image = app.get_image(name)
     super().__init__(pos, image)
     self.new_direction = True
     self.direction = RIGHT
@@ -28,9 +28,6 @@ class Ghost(Sprite):
   def get_home_pos(self):
     return self.initial_pos
 
-  def is_walkable(self, cell):
-    return cell.cell not in ('wall', 'door', 'impassable')
-
   def is_vulnerable(self):
     return self.mode == 'frightened' and self.action != 'going-home'
 
@@ -43,7 +40,7 @@ class Ghost(Sprite):
         'going-home': 'eyes-' + self.direction,
       }
       animation_name = actions[self.action]
-    self.animation = self.app.animations.get(animation_name)
+    self.animation = self.app.assets[animation_name]
     self.animation.rewind()
 
   def redraw(self):
