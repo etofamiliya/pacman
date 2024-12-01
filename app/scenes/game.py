@@ -15,7 +15,9 @@ class Game(Scene):
     self.from_layer = self.sprites.get_sprites_from_layer
     self.channel = pygame.mixer.find_channel()
     self.starter = None
+    self.grid = None
     self.lives = 3
+    self.bonus = 0
     self.score = 0
 
   def react(self, app, event):
@@ -30,7 +32,7 @@ class Game(Scene):
 
   def on_collision(self, sprite):
     if isinstance(sprite, Dot):
-      eating_sound = self.app.media('eating', 'wav')
+      eating_sound = self.app.assets['eating.wav']
       self.channel.queue(eating_sound)
       self.score += 10
       sprite.kill()
@@ -38,7 +40,7 @@ class Game(Scene):
       self.last_dot_check()
 
     elif isinstance(sprite, Energizer):
-      eating_bonus = self.app.media('eating_bonus', 'wav')
+      eating_bonus = self.app.assets['eating_bonus.wav']
       self.channel.play(eating_bonus)
       for ghost in list(self.ghosts.values()):
         ghost.frighten()
@@ -50,7 +52,7 @@ class Game(Scene):
       self.ghosts_check()
 
     elif isinstance(sprite, Fruit):
-      eating_bonus = self.app.media('eating_bonus', 'wav')
+      eating_bonus = self.app.assets['eating_bonus.wav']
       self.channel.play(eating_bonus)
       self.score += 500
       sprite.kill()
@@ -61,14 +63,14 @@ class Game(Scene):
         ts_score = TimedSprite(sprite.get_pos(), self.app, ts_name, 800)
         self.sprites.add(ts_score, layer=GameTypes.timed_layer)
 
-        eating_ghosts = self.app.media('eating_ghosts', 'wav')
+        eating_ghosts = self.app.assets['eating_ghosts.wav']
         self.channel.play(eating_ghosts)
         self.score += self.bonus
         sprite.send_to_home()
         self.bonus *= 2
 
       elif sprite.mode in ['scattering', 'chasing']:
-        death_sound = self.app.media('death', 'wav')
+        death_sound = self.app.assets['death.wav']
         self.channel.play(death_sound)
         for ghost in list(self.ghosts.values()):
           ghost.reset()
@@ -100,7 +102,7 @@ class Game(Scene):
   def ghosts_check(self):
     for ghost in list(self.ghosts.values()):
       if ghost.is_vulnerable():
-        ghosts_scared = self.app.media('ghosts_scared', 'wav')
+        ghosts_scared = self.app.assets['ghosts_scared.wav']
         self.app.after_delay(ghosts_scared.get_length(), self.ghosts_check)
         self.channel.queue(ghosts_scared)
         break

@@ -1,5 +1,4 @@
 import pygame
-
 from app.sprites.sprite import Sprite
 
 
@@ -8,6 +7,7 @@ class TextLabel(Sprite):
     super().__init__((0, 0), pygame.Surface((0, 0)))
     self.redraw = lambda t: font.render(t, True, color)
     self.newpos = lambda i: (x_center - (i.get_width() / 2), y_offset)
+    self.text = None
     self.set_text(text)
 
   def set_text(self, text):

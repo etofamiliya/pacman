@@ -15,5 +15,8 @@ class Sprite(pygame.sprite.DirtySprite):
   def set_pos(self, newpos):
     self.rect.topleft = newpos
 
+  def is_walkable(self, cell):
+    return cell.cell not in ('wall', 'door', 'impassable')
+
   def react(self, app, event):
     pass

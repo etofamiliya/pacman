@@ -5,7 +5,7 @@ from app.sprites.sprite import Sprite
 
 class Pacman(Sprite):
   def __init__(self, pos, app):
-    image = app.textures['pacman']
+    image = app.get_image('pacman')
     super().__init__(pos, image)
     self.sprites = app.game.sprites.sprites
     self.new_direction = None
@@ -16,9 +16,6 @@ class Pacman(Sprite):
     self.speed = 0
     self.dirty = 2
     self.app = app
-
-  def is_walkable(self, cell):
-    return cell.cell not in ('wall', 'door', 'impassable')
 
   def can_move_to(self, cell, direction):
     neighbors = self.game.grid.get_neighbors(cell)
@@ -34,14 +31,14 @@ class Pacman(Sprite):
 
   def change_animation(self):
     if self.dying:
-      self.animation = self.app.animations['pacman-dying-' + self.direction]
+      self.animation = self.app.assets['pacman-dying-' + self.direction]
     else:
-      self.animation = self.app.animations['pacman-' + self.direction]
+      self.animation = self.app.assets['pacman-' + self.direction]
     self.animation.rewind()
 
   def respawn(self):
     self.set_pos(self.initial_pos)
-    self.image = self.app.textures['pacman']
+    self.image = self.app.get_image('pacman')
     self.animation = None
     self.dying = False
     self.speed = 0

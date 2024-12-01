@@ -2,11 +2,14 @@
 class GridCell:
   def __init__(self, tilesize, row, col, cell, cost):
     self.tilesize = tilesize
+    self.parent = None
     self.cell = cell
     self.cost = cost
     self.row = row
     self.col = col
-    self.reset()
+    self.g = 0
+    self.h = 0
+    self.f = 0
 
   def get_pos(self):
     return self.col * self.tilesize, self.row * self.tilesize

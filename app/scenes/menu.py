@@ -1,3 +1,4 @@
+import io
 import pygame
 from pygame.locals import *
 from app.scenes.scene import Scene
@@ -11,13 +12,16 @@ class Menu(Scene):
 
     x_center = app.screen.get_width() / 2
 
-    firenight = app.media('Firenight-Regular', 'otf')
+    firenight = io.BytesIO(app.assets['firenight.otf'])
     firenight_60 = pygame.font.Font(firenight, 60)
+    firenight.seek(0)
     firenight_36 = pygame.font.Font(firenight, 36)
 
-    inconsolata = app.media('Inconsolata', 'otf')
+    inconsolata = io.BytesIO(app.assets['inconsolata.otf'])
     inconsolata_18 = pygame.font.Font(inconsolata, 18)
+    inconsolata.seek(0)
     inconsolata_14 = pygame.font.Font(inconsolata, 14)
+    inconsolata.seek(0)
     inconsolata_12 = pygame.font.Font(inconsolata, 12)
 
     self.add_label(firenight_60, 'Pacman', x_center, 15, (255, 255, 0))
@@ -46,6 +50,9 @@ class Menu(Scene):
     footer_text = 'etofamiliya 2017-2024'
     self.add_label(inconsolata_12, footer_text, x_center, 590)
 
+    # inconsolata.close()
+    # firenight.close()
+
   def react(self, app, event):
     if event.type == KEYDOWN:
       alt_f4 = event.key == K_F4 and bool(event.mod & KMOD_ALT)
@@ -56,15 +63,15 @@ class Menu(Scene):
       app.close()
 
   def input_box_react(self, app, event):
-    if event.key == K_RETURN:
+    if event.key in [K_RETURN, K_KP_ENTER]:
       if len(app.player):
         app.after_delay(200, app.show_game)
 
     elif event.key == K_BACKSPACE:
       app.player = app.player[:-1]
     else:
-      char = chr(event.key)
-      if char.isascii():
+      char = event.unicode
+      if char.isalnum():
         upper = event.mod & (KMOD_SHIFT | KMOD_CAPS)
         app.player += char.upper() if upper else char
         app.player = app.player[:12]

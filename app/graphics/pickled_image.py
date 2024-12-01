@@ -6,11 +6,14 @@ class PickledImage:
     self.image = image
 
   def __getstate__(self):
+    bytes_ = pygame.image.tobytes(self.image, 'RGBA')
+    size = self.image.get_size()
+
     state = self.__dict__.copy()
-    state['image'] = (pygame.image.tobytes(self.image, 'RGBA'), self.image.get_size())
+    state['image'] = (bytes_, size)
     return state
 
   def __setstate__(self, state):
     self.__dict__.update(state)
-    saved_image_tuple = state['image']
-    state['image'] = pygame.image.frombytes(*saved_image_tuple)
+    bytes_, size = state['image']
+    self.image = pygame.image.frombytes(bytes_, size,'RGBA')

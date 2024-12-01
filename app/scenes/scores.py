@@ -9,7 +9,7 @@ class Scores(Scene):
     super().__init__(app, pygame.sprite.RenderUpdates())
 
     x_center = app.screen.get_width() / 2
-    inconsolata = app.media('Inconsolata', 'otf')
+    inconsolata = app.assets['Inconsolata.otf']
     inconsolata_14 = pygame.font.Font(inconsolata, 14)
     inconsolata_12 = pygame.font.Font(inconsolata, 12)
 
