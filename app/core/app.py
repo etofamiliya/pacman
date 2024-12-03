@@ -70,7 +70,7 @@ class App:
       with open('assets', 'rb') as a:
         self.assets = pickle.load(a)
     except UnpicklingError as e:
-      print(f'86: {e}')
+      return
 
     sounds = [key for key in self.assets.keys() if key.endswith('.wav')]
     for key in sounds:

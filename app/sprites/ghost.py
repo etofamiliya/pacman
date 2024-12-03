@@ -1,8 +1,10 @@
 import pygame
 
-from random import shuffle
-from app.pathing.directions import *
 from app.sprites.sprite import Sprite
+from app.sprites.ghost_action import *
+from app.sprites.ghost_mode import *
+from app.pathing.directions import *
+from random import shuffle
 
 
 class Ghost(Sprite):
@@ -13,13 +15,13 @@ class Ghost(Sprite):
     self.direction = RIGHT
     self.animation = None
     self.game = app.game
+    self.action = IDLE
     self.name = name
-    self.action = ''
+    self.mode = INIT
     self.timers = []
     self.speed = 0
     self.dirty = 2
     self.app = app
-    self.mode = ''
     self.path = []
 
   def is_at_home(self):
@@ -29,15 +31,15 @@ class Ghost(Sprite):
     return self.initial_pos
 
   def is_vulnerable(self):
-    return self.mode == 'frightened' and self.action != 'going-home'
+    return self.mode is FRIGHTENED and self.action is not GOING_HOME
 
   def change_animation(self):
     animation_name = self.name + '-' + self.direction
-    if self.mode == 'frightened':
+    if self.mode is FRIGHTENED:
       actions = {
-        'blinking': 'ghost-blinking',
-        'walking': 'ghost-frightened',
-        'going-home': 'eyes-' + self.direction,
+        BLINKING: 'ghost-blinking',
+        WALKING: 'ghost-frightened',
+        GOING_HOME: 'eyes-' + self.direction,
       }
       animation_name = actions[self.action]
     self.animation = self.app.assets[animation_name]
@@ -66,12 +68,12 @@ class Ghost(Sprite):
         self.path = [neighbor]
         break
 
-  def change_action(self, newaction):
-    self.action = newaction
+  def change_action(self, action):
+    self.action = action
     self.change_animation()
 
   def send_to_home(self):
-    self.change_action('going-home')
+    self.change_action(GOING_HOME)
     self.reset_timers()
     self.speed = 5
 
@@ -88,29 +90,29 @@ class Ghost(Sprite):
     self.timers = []
 
   def switch_mode(self):
-    if self.mode == 'scattering':
-      self.mode = 'chasing'
+    if self.mode is SCATTERING:
+      self.mode = CHASING
     else:
-      self.mode = 'scattering'
+      self.mode = SCATTERING
 
     self.add_timer(5000, self.switch_mode)
-    self.change_action('walking')
+    self.change_action(WALKING)
     self.path = self.path[:1]
     self.speed = 3
 
   def frighten(self):
     self.reset_timers()
-    blink = lambda: self.change_action('blinking')
+    blink = lambda: self.change_action(BLINKING)
     self.add_timer(8000, self.switch_mode)
     self.add_timer(6500, blink)
-    self.mode = 'frightened'
-    self.change_action('walking')
+    self.mode = FRIGHTENED
+    self.change_action(WALKING)
     self.path = self.path[:1]
     self.speed = 2
 
   def reset(self):
-    self.mode = ''
-    self.change_action('')
+    self.mode = INIT
+    self.change_action(IDLE)
     self.reset_timers()
     self.speed = 0
     self.path = []
@@ -160,8 +162,8 @@ class Ghost(Sprite):
         self.path.pop(0)
 
     else:
-      if self.mode == 'frightened':
-        if self.action == 'going-home':
+      if self.mode is FRIGHTENED:
+        if self.action is GOING_HOME:
           if self.is_at_home():
             self.animate()
           else:
@@ -169,13 +171,13 @@ class Ghost(Sprite):
         else:
           self.make_one_step(neighbors)
 
-      elif self.mode == 'scattering':
+      elif self.mode is SCATTERING:
         if self.is_at_home():
           blinky = self.app.game.ghosts['blinky']
           self.path = self.pathfind(blinky.initial_pos)
         else:
           self.make_one_step(neighbors)
-            
-      elif self.mode == 'chasing':
+
+      elif self.mode is CHASING:
         self.path = self.pathfind(self.game.pacman.get_pos())
     self.redraw()

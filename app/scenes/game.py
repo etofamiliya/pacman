@@ -7,6 +7,7 @@ from app.core.gametypes import GameTypes
 from app.sprites.other import *
 from app.sprites.ghost import Ghost
 from app.sprites.timed_sprite import TimedSprite
+from app.sprites.ghost_mode import SCATTERING, CHASING
 
 
 class Game(Scene):
@@ -69,7 +70,7 @@ class Game(Scene):
         sprite.send_to_home()
         self.bonus *= 2
 
-      elif sprite.mode in ['scattering', 'chasing']:
+      elif sprite.mode in [SCATTERING, CHASING]:
         death_sound = self.app.assets['death.wav']
         self.channel.play(death_sound)
         for ghost in list(self.ghosts.values()):
