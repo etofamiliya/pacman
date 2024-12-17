@@ -1,5 +1,5 @@
-import io
 import pygame
+from io import BytesIO
 from pygame.locals import *
 from app.scenes.scene import Scene
 from app.scenes.text_label import TextLabel
@@ -12,12 +12,12 @@ class Menu(Scene):
 
     x_center = app.screen.get_width() / 2
 
-    firenight = io.BytesIO(app.assets['firenight.otf'])
+    firenight = BytesIO(app.assets['firenight.otf'])
     firenight_60 = pygame.font.Font(firenight, 60)
     firenight.seek(0)
     firenight_36 = pygame.font.Font(firenight, 36)
 
-    inconsolata = io.BytesIO(app.assets['inconsolata.otf'])
+    inconsolata = BytesIO(app.assets['inconsolata.otf'])
     inconsolata_18 = pygame.font.Font(inconsolata, 18)
     inconsolata.seek(0)
     inconsolata_14 = pygame.font.Font(inconsolata, 14)
