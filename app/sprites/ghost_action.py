@@ -1,6 +1,6 @@
 class GhostAction:
-  def __init__(self, action):
-    self.action = action
+    def __init__(self, action):
+        self.action = action
 
 
 GOING_HOME = GhostAction('going-home')
